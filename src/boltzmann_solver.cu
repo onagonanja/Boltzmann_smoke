@@ -248,8 +248,8 @@ void BoltzmannSolver::initializeFields() {
     std::vector<float> initial_velocity(grid_size * 3, 0.0f);
     std::vector<float> initial_f_distribution(grid_size * 19, 0.0f);
     std::vector<float> initial_g_distribution(grid_size * 7, 0.0f);
-    std::vector<float> initial_tau_f(grid_size, 1.5f);
-    std::vector<float> initial_tau_t(grid_size, 0.5f);
+    std::vector<float> initial_tau_f(grid_size, 1.3f);
+    std::vector<float> initial_tau_t(grid_size, 0.8f);
     std::vector<float> initial_temperature(grid_size, 300.0f);
 
     // Set high temperature region at the bottom
@@ -411,7 +411,7 @@ void BoltzmannSolver::simulate(float dt, int steps) {
         int center_y = ny_ / 8;
         int center_z = nz_ / 2;
         float source_radius = 6.0f;
-        float source_density = 2.1f;
+        float source_density = 0.5f;
 
         for (int z = 0; z < nz_; z++) {
             for (int y = 0; y < ny_; y++) {
@@ -422,7 +422,7 @@ void BoltzmannSolver::simulate(float dt, int steps) {
                     float dist = sqrtf(dx*dx + dy*dy + dz*dz);
                     int idx = z * nx_ * ny_ + y * nx_ + x;
 
-                    if (dist < source_radius && current_step_ < 10) {
+                    if (dist < source_radius) {
                         h_density[idx] = source_density * (0.5f + 0.5f * sinf(omega * current_step_));
                         h_temperature[idx] = 500.0f;
                     }

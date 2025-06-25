@@ -68,7 +68,7 @@ int main()
                 visualizer.update(solver.getDensityData(), nx, ny, nz);
                 
                 // Update simulation
-                solver.simulate(dt, 30);
+                solver.simulate(dt, 10);
                 
                 // Output to OpenVDB file
                 if (saveSimulation && step % 1 == 0) {  // Save every 1 step
@@ -77,7 +77,7 @@ int main()
                 }
                 
                 // Wait to maintain 60FPS
-                std::this_thread::sleep_for(std::chrono::milliseconds(16)); // 16ms -> 160ms
+                // std::this_thread::sleep_for(std::chrono::milliseconds(16)); // 16ms -> 160ms
             }
         }
         
