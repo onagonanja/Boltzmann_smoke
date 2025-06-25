@@ -11,7 +11,14 @@ class VDBExporter;
 class BoltzmannSolver
 {
 public:
-    BoltzmannSolver(int nx, int ny, int nz);
+    struct InitParams {
+        float tau_f = 1.3f;
+        float tau_t = 0.8f;
+        float temperature = 300.0f;
+        // Add more parameters as needed
+    };
+
+    BoltzmannSolver(int nx, int ny, int nz, const InitParams& params);
     ~BoltzmannSolver();
 
     // Simulation initialization
@@ -39,6 +46,7 @@ public:
 private:
     int nx_, ny_, nz_;  // Grid size
     int current_step_ = 0;  // Current simulation step count
+    InitParams init_params_;
 
     // GPU memory - for fluid simulation
     float* d_f_distribution;  // Fluid distribution function

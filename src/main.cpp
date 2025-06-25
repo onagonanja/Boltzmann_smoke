@@ -10,6 +10,7 @@
 #include <string>
 #include <iomanip>  // Added for std::setw, std::setfill
 #include <filesystem>  // For filesystem operations
+#include <nlohmann/json.hpp>
 
 int main()
 {
@@ -32,6 +33,17 @@ int main()
         bool replaySimulation = false;
         std::string replayFilename = "simulation_data.bin";
 
+        // Load initialization parameters from JSON
+        BoltzmannSolver::InitParams init_params;
+        std::ifstream ifs("../init_params.json");
+        if (ifs) {
+            nlohmann::json j;
+            ifs >> j;
+            init_params.tau_f = j.value("tau_f", 0.6f);
+            init_params.tau_t = j.value("tau_t", 0.8f);
+            init_params.temperature = j.value("temperature", 300.0f);
+        }
+
         if (replaySimulation) {
             // Replay simulation results
             SimulationRecorder recorder(nx, ny, nz);
@@ -50,7 +62,7 @@ int main()
             }
         } else {
             // Normal simulation execution
-            BoltzmannSolver solver(nx, ny, nz);
+            BoltzmannSolver solver(nx, ny, nz, init_params);
             Visualizer visualizer(800, 600);  // Create 800x600 window
             VDBExporter exporter(nx, ny, nz);
             
@@ -68,7 +80,7 @@ int main()
                 visualizer.update(solver.getDensityData(), nx, ny, nz);
                 
                 // Update simulation
-                solver.simulate(dt, 10);
+                solver.simulate(dt, 30);
                 
                 // Output to OpenVDB file
                 if (saveSimulation && step % 1 == 0) {  // Save every 1 step
@@ -77,7 +89,7 @@ int main()
                 }
                 
                 // Wait to maintain 60FPS
-                // std::this_thread::sleep_for(std::chrono::milliseconds(16)); // 16ms -> 160ms
+                std::this_thread::sleep_for(std::chrono::milliseconds(16)); // 16ms -> 160ms
             }
         }
         

@@ -202,8 +202,8 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
     vel_z[idx] = vel_local.z;
 }
 
-BoltzmannSolver::BoltzmannSolver(int nx, int ny, int nz)
-    : nx_(nx), ny_(ny), nz_(nz), d_f_distribution(nullptr), d_g_distribution(nullptr), d_density(nullptr), d_velocity_x(nullptr), d_velocity_y(nullptr), d_velocity_z(nullptr), d_temperature(nullptr), d_tau_f(nullptr), d_tau_t(nullptr), h_density(nullptr), h_temperature(nullptr) {
+BoltzmannSolver::BoltzmannSolver(int nx, int ny, int nz, const InitParams& params)
+    : nx_(nx), ny_(ny), nz_(nz), d_f_distribution(nullptr), d_g_distribution(nullptr), d_density(nullptr), d_velocity_x(nullptr), d_velocity_y(nullptr), d_velocity_z(nullptr), d_temperature(nullptr), d_tau_f(nullptr), d_tau_t(nullptr), h_density(nullptr), h_temperature(nullptr), init_params_(params) {
     allocateMemory();
     initializeFields();
 }
@@ -248,9 +248,9 @@ void BoltzmannSolver::initializeFields() {
     std::vector<float> initial_velocity(grid_size * 3, 0.0f);
     std::vector<float> initial_f_distribution(grid_size * 19, 0.0f);
     std::vector<float> initial_g_distribution(grid_size * 7, 0.0f);
-    std::vector<float> initial_tau_f(grid_size, 1.3f);
-    std::vector<float> initial_tau_t(grid_size, 0.8f);
-    std::vector<float> initial_temperature(grid_size, 300.0f);
+    std::vector<float> initial_tau_f(grid_size, init_params_.tau_f);
+    std::vector<float> initial_tau_t(grid_size, init_params_.tau_t);
+    std::vector<float> initial_temperature(grid_size, init_params_.temperature);
 
     // Set high temperature region at the bottom
     int bottom_height = ny_ / 4;
@@ -259,8 +259,7 @@ void BoltzmannSolver::initializeFields() {
             for (int x = 0; x < nx_; x++) {
                 int idx = z * nx_ * ny_ + y * nx_ + x;
                 float height_factor = 1.0f - (float)y / bottom_height;
-                initial_temperature[idx] = 300.0f + 200.0f * height_factor;
-                
+                initial_temperature[idx] = init_params_.temperature + 200.0f * height_factor;
                 // Set initial temperature distribution function
                 for (int i = 0; i < 7; i++) {
                     initial_g_distribution[7*idx + i] = w_t[i] * initial_temperature[idx];
