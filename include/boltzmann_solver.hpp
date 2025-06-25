@@ -15,6 +15,10 @@ public:
         float tau_f = 1.3f;
         float tau_t = 0.8f;
         float temperature = 300.0f;
+        float wind_base = 0.05f;
+        float wind_factor = 0.2f;
+        float source_radius = 6.0f;
+        float source_density = 0.5f;
         // Add more parameters as needed
     };
 

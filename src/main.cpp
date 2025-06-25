@@ -22,8 +22,7 @@ int main()
         const int nz = 128 * n_scale;
         const int maxSteps = 100;
         const float dt = 0.1f;
-        const float viscosity = 0.1f;
-        const float diffusion = 0.1f;
+
         
         // Whether to save simulation results
         bool saveSimulation = true;
@@ -39,9 +38,21 @@ int main()
         if (ifs) {
             nlohmann::json j;
             ifs >> j;
-            init_params.tau_f = j.value("tau_f", 0.6f);
+            init_params.tau_f = j.value("tau_f", 1.3f);
             init_params.tau_t = j.value("tau_t", 0.8f);
             init_params.temperature = j.value("temperature", 300.0f);
+            
+            // Load wind parameters
+            if (j.contains("wind")) {
+                init_params.wind_base = j["wind"].value("base_wind", 0.05f);
+                init_params.wind_factor = j["wind"].value("wind_factor", 0.2f);
+            }
+            
+            // Load smoke source parameters
+            if (j.contains("smoke_source")) {
+                init_params.source_radius = j["smoke_source"].value("radius", 6.0f);
+                init_params.source_density = j["smoke_source"].value("density", 0.5f);
+            }
         }
 
         if (replaySimulation) {

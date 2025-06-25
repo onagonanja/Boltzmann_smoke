@@ -54,9 +54,15 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
     float buoyancy_force = -beta * g * (rho_local * (1.0f - thermal_factor) - rho_air) * rand_factor;
     vel_local.y += buoyancy_force;
 
+    int y = (idx % (nx * ny)) / nx;
+
+    if(y > ny / 5 && y < ny / 5 * 2) {
+        vel_local.x += 0.00f;
+    }
+
     // Limit velocity
     float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
-    if (u_sq > 0.1f) {
+    if (u_sq > 0.3f) {
         float scale = 1.0f / sqrtf(u_sq);
         vel_local.x *= scale;
         vel_local.y *= scale;
@@ -409,8 +415,8 @@ void BoltzmannSolver::simulate(float dt, int steps) {
         int center_x = nx_ / 2;
         int center_y = ny_ / 8;
         int center_z = nz_ / 2;
-        float source_radius = 6.0f;
-        float source_density = 0.5f;
+        float source_radius = init_params_.source_radius;
+        float source_density = init_params_.source_density;
 
         for (int z = 0; z < nz_; z++) {
             for (int y = 0; y < ny_; y++) {
@@ -453,6 +459,7 @@ void BoltzmannSolver::simulate(float dt, int steps) {
                   << " | Max velocity: " << getMaxVelocity()
                   << std::flush;
     }
+    std::cout << std::endl;
 }
 
 BoltzmannSolver::~BoltzmannSolver() {
