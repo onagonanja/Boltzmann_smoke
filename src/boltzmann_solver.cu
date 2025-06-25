@@ -31,7 +31,7 @@ __device__ __constant__ float c_t_dz[7] = {0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  1.
 __device__ __constant__ float w_t[7] = {1.0f/4.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f};
 
 // Fluid collision step
-__global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* vel_y, float* vel_z, float* tau_f, float* temperature, int nx, int ny, int nz, int current_step) {
+__global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* vel_y, float* vel_z, float* tau_f, float* temperature, int nx, int ny, int nz, int current_step, float velocity_limit) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= nx * ny * nz) return;
 
@@ -62,7 +62,7 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
 
     // Limit velocity
     float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
-    if (u_sq > 0.3f) {
+    if (u_sq > velocity_limit) {
         float scale = 1.0f / sqrtf(u_sq);
         vel_local.x *= scale;
         vel_local.y *= scale;
@@ -250,7 +250,7 @@ void BoltzmannSolver::freeMemory() {
 
 void BoltzmannSolver::initializeFields() {
     size_t grid_size = nx_ * ny_ * nz_;
-    std::vector<float> initial_density(grid_size, 0.0f);
+    std::vector<float> initial_density(grid_size, 0.01f);
     std::vector<float> initial_velocity(grid_size * 3, 0.0f);
     std::vector<float> initial_f_distribution(grid_size * 19, 0.0f);
     std::vector<float> initial_g_distribution(grid_size * 7, 0.0f);
@@ -335,7 +335,7 @@ void BoltzmannSolver::collideFluid() {
     int grid_size = nx_ * ny_ * nz_;
     int block_size = 256;
     int num_blocks = (grid_size + block_size - 1) / block_size;
-    fluidCollisionKernel<<<num_blocks, block_size>>>(d_f_distribution, d_density, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_f, d_temperature, nx_, ny_, nz_, current_step_);
+    fluidCollisionKernel<<<num_blocks, block_size>>>(d_f_distribution, d_density, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_f, d_temperature, nx_, ny_, nz_, current_step_, init_params_.velocity_limit);
     cudaDeviceSynchronize();
 }
 
@@ -428,7 +428,7 @@ void BoltzmannSolver::simulate(float dt, int steps) {
                     int idx = z * nx_ * ny_ + y * nx_ + x;
 
                     if (dist < source_radius) {
-                        h_density[idx] = source_density * (0.5f + 0.5f * sinf(omega * current_step_));
+                        h_density[idx] = source_density * (0.9f + 0.1f * sinf(omega * current_step_));
                         h_temperature[idx] = 500.0f;
                     }
                 }

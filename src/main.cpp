@@ -53,6 +53,9 @@ int main()
                 init_params.source_radius = j["smoke_source"].value("radius", 6.0f);
                 init_params.source_density = j["smoke_source"].value("density", 0.5f);
             }
+            
+            // Load velocity limit parameter
+            init_params.velocity_limit = j.value("velocity_limit", 0.3f);
         }
 
         if (replaySimulation) {
