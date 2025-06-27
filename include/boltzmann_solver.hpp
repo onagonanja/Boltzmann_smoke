@@ -45,6 +45,7 @@ public:
     float getMaxDensity() const;
     float getAverageDensity() const;
     float getMaxTemperature() const;
+    float getAverageTemperature() const;
     float getAverageVelocity() const;
     float getMaxVelocity() const;
 

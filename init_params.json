@@ -1,14 +1,14 @@
 {
-  "tau_f": 1.2,
-  "tau_t": 0.8,
+  "tau_f": 0.97,
+  "tau_t": 0.97,
   "temperature": 300.0,
   "wind": {
     "base_wind": 0.05,
     "wind_factor": 0.2
   },
   "smoke_source": {
-    "radius": 2.0,
-    "density": 0.02
+    "radius": 15.0,
+    "density": 1.1
   },
-  "velocity_limit": 30.3
+  "velocity_limit": 0.0057
 }
