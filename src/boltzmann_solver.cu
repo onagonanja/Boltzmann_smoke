@@ -52,7 +52,7 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
     // Calculate buoyancy force based on temperature
     const float g = 9.81f;
     const float rho_air = 10.5f;
-    const float beta = 0.00f;
+    const float beta = 0.01f;
     const float T_ref = 300.0f;
     float T_local = temperature[idx];
     float thermal_factor = (T_local - T_ref) / T_ref;
@@ -88,12 +88,12 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
         float f_tmp = f[19*idx + i];
         f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]);
         
-        if(f[19*idx + i] < 0.0f && found_negative_f == 0 && x == focused_point_x && y == focused_point_y && z == focused_point_z) {
-            found_negative_f = 1;
-            printf("Step: %d, Collision, (x, y, z): (%d, %d, %d), rho_local: %f, f_eq[i]: %f, f_tmp: %f, f[19*idx + i]: %f\n", current_step, x, y, z, rho_local, f_eq[i], f_tmp, f[19*idx + i]);
-        }else if(x == focused_point_x && y == focused_point_y && z == focused_point_z && current_step == 1) {
-            printf("Step: %d, Collision, (x, y, z): (%d, %d, %d), f[19*idx + i]: %f\n", current_step, x, y, z, f[19*idx + i]);
-        }
+        // if(f[19*idx + i] < 0.0f && found_negative_f == 0 && x == focused_point_x && y == focused_point_y && z == focused_point_z) {
+        //     found_negative_f = 1;
+        //     printf("Step: %d, Collision, (x, y, z): (%d, %d, %d), rho_local: %f, f_eq[i]: %f, f_tmp: %f, f[19*idx + i]: %f\n", current_step, x, y, z, rho_local, f_eq[i], f_tmp, f[19*idx + i]);
+        // }else if(x == focused_point_x && y == focused_point_y && z == focused_point_z && current_step == 1) {
+        //     printf("Step: %d, Collision, (x, y, z): (%d, %d, %d), f[19*idx + i]: %f\n", current_step, x, y, z, f[19*idx + i]);
+        // }
     }
 }
 
@@ -207,9 +207,9 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
         vel_local.y += c_dy[i] * fi;
         vel_local.z += c_dz[i] * fi;
 
-        if(x == focused_point_x && y == focused_point_y && z == focused_point_z && found_negative_f == 0) {
-            printf("Macroscopic, (x, y, z): (%d, %d, %d), f[19*idx + i]: %f\n", x, y, z, fi);
-        }
+        // if(x == focused_point_x && y == focused_point_y && z == focused_point_z && found_negative_f == 0) {
+        //     printf("Macroscopic, (x, y, z): (%d, %d, %d), f[19*idx + i]: %f\n", x, y, z, fi);
+        // }
     }
     
     // Normalize velocity
@@ -225,9 +225,9 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
     vel_y[idx] = vel_local.y;
     vel_z[idx] = vel_local.z;
 
-    if(x == focused_point_x && y == focused_point_y && z == focused_point_z && found_negative_f == 0) {
-        printf("Macroscopic, (x, y, z): (%d, %d, %d), rho_local: %f, vel_local: (%f, %f, %f)\n", x, y, z, rho_local, vel_local.x, vel_local.y, vel_local.z);
-    }
+    // if(x == focused_point_x && y == focused_point_y && z == focused_point_z && found_negative_f == 0) {
+    //     printf("Macroscopic, (x, y, z): (%d, %d, %d), rho_local: %f, vel_local: (%f, %f, %f)\n", x, y, z, rho_local, vel_local.x, vel_local.y, vel_local.z);
+    // }
 }
 
 BoltzmannSolver::BoltzmannSolver(int nx, int ny, int nz, const InitParams& params)
@@ -503,15 +503,15 @@ void BoltzmannSolver::simulate(float dt, int steps) {
         copyToHost();
 
         // Display progress
-        // std::cout << "\rStep " << current_step_ 
-        //           << " | Active voxels: " << countActiveVoxels() 
-        //           << " | Max density: " << getMaxDensity() 
-        //           << " | Avg density: " << getAverageDensity() 
-        //           << " | Max temperature: " << getMaxTemperature()
-        //           << " | Avg temperature: " << getAverageTemperature()
-        //           << " | Avg velocity: " << getAverageVelocity()
-        //           << " | Max velocity: " << getMaxVelocity()
-        //           << std::flush;
+        std::cout << "\rStep " << current_step_ 
+                  << " | Active voxels: " << countActiveVoxels() 
+                  << " | Max density: " << getMaxDensity() 
+                  << " | Avg density: " << getAverageDensity() 
+                  << " | Max temperature: " << getMaxTemperature()
+                  << " | Avg temperature: " << getAverageTemperature()
+                  << " | Avg velocity: " << getAverageVelocity()
+                  << " | Max velocity: " << getMaxVelocity()
+                  << std::flush;
     }
 }
 
