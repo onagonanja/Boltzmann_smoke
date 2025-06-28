@@ -1,7 +1,10 @@
 {
-  "tau_f": 0.67,
-  "tau_t": 0.67,
+  "tau_f": 0.57,
+  "tau_t": 0.57,
   "temperature": 300.0,
+  "beta": 0.01,
+  "buoyancy_rand_ratio": 0.8,
+  "tau_rand_factor": 0.2,
   "wind": {
     "base_wind": 0.05,
     "wind_factor": 0.2

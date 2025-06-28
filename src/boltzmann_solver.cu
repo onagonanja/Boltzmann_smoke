@@ -31,13 +31,15 @@ __device__ __constant__ float c_t_dz[7] = {0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  1.
 __device__ __constant__ float w_t[7] = {1.0f/4.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f};
 
 __device__ int found_negative_f = 0;
+__device__ int found_negative_g = 0;
+
 __constant__ int focused_point_x = 64;
 __constant__ int focused_point_y = 32;
 __constant__ int focused_point_z = 49;
 
 
 // Fluid collision step
-__global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* vel_y, float* vel_z, float* tau_f, float* temperature, int nx, int ny, int nz, int current_step, float velocity_limit) {
+__global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* vel_y, float* vel_z, float* tau_f, float* temperature, int nx, int ny, int nz, int current_step, float velocity_limit, float beta, float buoyancy_rand_ratio, float tau_rand_factor) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= nx * ny * nz) return;
 
@@ -52,11 +54,10 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
     // Calculate buoyancy force based on temperature
     const float g = 9.81f;
     const float rho_air = 10.5f;
-    const float beta = 0.1f;
     const float T_ref = 300.0f;
     float T_local = temperature[idx];
     float thermal_factor = (T_local - T_ref) / T_ref;
-    float rand_factor = 0.9f + 0.1f * curand_uniform(&state);
+    float rand_factor = buoyancy_rand_ratio + (1.0f - buoyancy_rand_ratio) * curand_uniform(&state);
     float buoyancy_force = -beta * g * (rho_local * (1.0f - thermal_factor) - rho_air) * rand_factor;
     vel_local.y += buoyancy_force;
 
@@ -82,12 +83,11 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
         f_eq[i] = w[i] * rho_local * (1.0f + 3.0f * ci_dot_u + 4.5f * ci_dot_u * ci_dot_u - 1.5f * u_sq);
     }
 
-    float tau_rand = 0.1f * curand_uniform(&state);
-    float tau = tau_f[idx] + tau_rand; 
+
+    float tau = tau_f[idx] + tau_rand_factor * curand_uniform(&state);
     for (int i = 0; i < 19; i++) {
-        float f_tmp = f[19*idx + i];
+        // float f_tmp = f[19*idx + i];
         f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]);
-        
         // if(f[19*idx + i] < 0.0f && found_negative_f == 0 && x == focused_point_x && y == focused_point_y && z == focused_point_z) {
         //     found_negative_f = 1;
         //     printf("Step: %d, Collision, (x, y, z): (%d, %d, %d), rho_local: %f, f_eq[i]: %f, f_tmp: %f, f[19*idx + i]: %f\n", current_step, x, y, z, rho_local, f_eq[i], f_tmp, f[19*idx + i]);
@@ -98,7 +98,7 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
 }
 
 // Temperature field collision step
-__global__ void temperatureCollisionKernel(float* g, float* temperature, float* vel_x, float* vel_y, float* vel_z, float* tau_t, int nx, int ny, int nz) {
+__global__ void temperatureCollisionKernel(float* g, float* temperature, float* vel_x, float* vel_y, float* vel_z, float* tau_t, int nx, int ny, int nz, float velocity_limit) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= nx * ny * nz) return;
 
@@ -106,15 +106,35 @@ __global__ void temperatureCollisionKernel(float* g, float* temperature, float* 
     float T_local = temperature[idx];
     float3 vel_local = make_float3(vel_x[idx], vel_y[idx], vel_z[idx]);
 
+    float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
+    float u_mag = sqrtf(u_sq);
+    if (u_mag > velocity_limit) {
+        float scale = velocity_limit / u_mag;
+        vel_local.x *= scale;
+        vel_local.y *= scale;
+        vel_local.z *= scale;
+        u_sq = velocity_limit * velocity_limit;
+    }
+
     // Calculate equilibrium distribution for temperature field
     for (int i = 0; i < 7; i++) {
         float ci_dot_u = c_t_dx[i] * vel_local.x + c_t_dy[i] * vel_local.y + c_t_dz[i] * vel_local.z;
         g_eq[i] = w_t[i] * T_local * (1.0f + 3.0f * ci_dot_u);
     }
 
+    int x = idx % nx;
+    int y = (idx % (nx * ny)) / nx;
+    int z = idx / (nx * ny);
+
     float tau = tau_t[idx];
     for (int i = 0; i < 7; i++) {
+        float g_tmp = g[7*idx + i];
         g[7*idx + i] = g[7*idx + i] - (1.0f/tau) * (g[7*idx + i] - g_eq[i]);
+
+        if(g[7*idx + i] < 0.0f && found_negative_g == 0 && x == focused_point_x && y == focused_point_y && z == focused_point_z) {
+            found_negative_g = 1;
+            printf("Temperature Collision, (x, y, z): (%d, %d, %d), T_local: %f, g_eq[i]: %f, g_tmp: %f, g[7*idx + i]: %f\n", x, y, z, T_local, g_eq[i], g_tmp, g[7*idx + i]);
+        }
     }
 }
 
@@ -380,7 +400,7 @@ void BoltzmannSolver::collideFluid() {
     int grid_size = nx_ * ny_ * nz_;
     int block_size = 256;
     int num_blocks = (grid_size + block_size - 1) / block_size;
-    fluidCollisionKernel<<<num_blocks, block_size>>>(d_f_distribution, d_density, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_f, d_temperature, nx_, ny_, nz_, current_step_, init_params_.velocity_limit);
+    fluidCollisionKernel<<<num_blocks, block_size>>>(d_f_distribution, d_density, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_f, d_temperature, nx_, ny_, nz_, current_step_, init_params_.velocity_limit, init_params_.beta, init_params_.buoyancy_rand_ratio, init_params_.tau_rand_factor);
     cudaDeviceSynchronize();
 }
 
@@ -388,7 +408,7 @@ void BoltzmannSolver::collideTemperature() {
     int grid_size = nx_ * ny_ * nz_;
     int block_size = 256;
     int num_blocks = (grid_size + block_size - 1) / block_size;
-    temperatureCollisionKernel<<<num_blocks, block_size>>>(d_g_distribution, d_temperature, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_t, nx_, ny_, nz_);
+    temperatureCollisionKernel<<<num_blocks, block_size>>>(d_g_distribution, d_temperature, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_t, nx_, ny_, nz_, init_params_.velocity_limit);
     cudaDeviceSynchronize();
 }
 

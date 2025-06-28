@@ -41,6 +41,9 @@ int main()
             init_params.tau_f = j.value("tau_f", 1.3f);
             init_params.tau_t = j.value("tau_t", 0.8f);
             init_params.temperature = j.value("temperature", 300.0f);
+            init_params.beta = j.value("beta", 0.1f);
+            init_params.buoyancy_rand_ratio = j.value("buoyancy_rand_ratio", 0.8f);
+            init_params.tau_rand_factor = j.value("tau_rand_factor", 0.2f);
             
             // Load wind parameters
             if (j.contains("wind")) {
