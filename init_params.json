@@ -4,14 +4,18 @@
   "temperature": 300.0,
   "beta": 0.01,
   "buoyancy_rand_ratio": 0.8,
-  "tau_rand_factor": 0.2,
+  "tau_rand_factor": 0.6,
+  "source_injection_rate": 0.1,
+  "source_temperature": 500.0,
+  "continuous_source": true,
+  "source_injection_interval": 30,
   "wind": {
     "base_wind": 0.05,
     "wind_factor": 0.2
   },
   "smoke_source": {
-    "radius": 15.0,
+    "radius": 12.0,
     "density": 1.1
   },
-  "velocity_limit": 0.057
+  "velocity_limit": 0.57
 }

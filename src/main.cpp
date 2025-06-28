@@ -44,6 +44,10 @@ int main()
             init_params.beta = j.value("beta", 0.1f);
             init_params.buoyancy_rand_ratio = j.value("buoyancy_rand_ratio", 0.8f);
             init_params.tau_rand_factor = j.value("tau_rand_factor", 0.2f);
+            init_params.source_injection_rate = j.value("source_injection_rate", 0.1f);
+            init_params.source_temperature = j.value("source_temperature", 500.0f);
+            init_params.continuous_source = j.value("continuous_source", true);
+            init_params.source_injection_interval = j.value("source_injection_interval", 10);
             
             // Load wind parameters
             if (j.contains("wind")) {

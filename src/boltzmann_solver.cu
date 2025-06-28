@@ -61,10 +61,6 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
     float buoyancy_force = -beta * g * (rho_local * (1.0f - thermal_factor) - rho_air) * rand_factor;
     vel_local.y += buoyancy_force;
 
-    int x = idx % nx;
-    int y = (idx % (nx * ny)) / nx;
-    int z = idx / (nx * ny);
-
     // Limit velocity
     float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
     float u_mag = sqrtf(u_sq);
@@ -83,17 +79,9 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
         f_eq[i] = w[i] * rho_local * (1.0f + 3.0f * ci_dot_u + 4.5f * ci_dot_u * ci_dot_u - 1.5f * u_sq);
     }
 
-
     float tau = tau_f[idx] + tau_rand_factor * curand_uniform(&state);
     for (int i = 0; i < 19; i++) {
-        // float f_tmp = f[19*idx + i];
         f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]);
-        // if(f[19*idx + i] < 0.0f && found_negative_f == 0 && x == focused_point_x && y == focused_point_y && z == focused_point_z) {
-        //     found_negative_f = 1;
-        //     printf("Step: %d, Collision, (x, y, z): (%d, %d, %d), rho_local: %f, f_eq[i]: %f, f_tmp: %f, f[19*idx + i]: %f\n", current_step, x, y, z, rho_local, f_eq[i], f_tmp, f[19*idx + i]);
-        // }else if(x == focused_point_x && y == focused_point_y && z == focused_point_z && current_step == 1) {
-        //     printf("Step: %d, Collision, (x, y, z): (%d, %d, %d), f[19*idx + i]: %f\n", current_step, x, y, z, f[19*idx + i]);
-        // }
     }
 }
 
@@ -131,10 +119,10 @@ __global__ void temperatureCollisionKernel(float* g, float* temperature, float* 
         float g_tmp = g[7*idx + i];
         g[7*idx + i] = g[7*idx + i] - (1.0f/tau) * (g[7*idx + i] - g_eq[i]);
 
-        if(g[7*idx + i] < 0.0f && found_negative_g == 0 && x == focused_point_x && y == focused_point_y && z == focused_point_z) {
-            found_negative_g = 1;
-            printf("Temperature Collision, (x, y, z): (%d, %d, %d), T_local: %f, g_eq[i]: %f, g_tmp: %f, g[7*idx + i]: %f\n", x, y, z, T_local, g_eq[i], g_tmp, g[7*idx + i]);
-        }
+        // if(g[7*idx + i] < 0.0f && found_negative_g == 0 && x == focused_point_x && y == focused_point_y && z == focused_point_z) {
+        //     found_negative_g = 1;
+        //     printf("Temperature Collision, (x, y, z): (%d, %d, %d), T_local: %f, g_eq[i]: %f, g_tmp: %f, g[7*idx + i]: %f\n", x, y, z, T_local, g_eq[i], g_tmp, g[7*idx + i]);
+        // }
     }
 }
 
@@ -216,7 +204,6 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
     
     int idx = z * nx * ny + y * nx + x;
     
-    // Calculate density and velocity
     float rho_local = 0.0f;
     float3 vel_local = make_float3(0.0f, 0.0f, 0.0f);
     
@@ -226,10 +213,6 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
         vel_local.x += c_dx[i] * fi;
         vel_local.y += c_dy[i] * fi;
         vel_local.z += c_dz[i] * fi;
-
-        // if(x == focused_point_x && y == focused_point_y && z == focused_point_z && found_negative_f == 0) {
-        //     printf("Macroscopic, (x, y, z): (%d, %d, %d), f[19*idx + i]: %f\n", x, y, z, fi);
-        // }
     }
     
     // Normalize velocity
@@ -244,10 +227,63 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
     vel_x[idx] = vel_local.x;
     vel_y[idx] = vel_local.y;
     vel_z[idx] = vel_local.z;
+}
 
-    // if(x == focused_point_x && y == focused_point_y && z == focused_point_z && found_negative_f == 0) {
-    //     printf("Macroscopic, (x, y, z): (%d, %d, %d), rho_local: %f, vel_local: (%f, %f, %f)\n", x, y, z, rho_local, vel_local.x, vel_local.y, vel_local.z);
-    // }
+// Continuous smoke source injection kernel
+__global__ void injectSmokeSourceKernel(float* f, float* g, float* rho, float* temperature, int nx, int ny, int nz, 
+                                       float source_radius, float source_density, float source_temperature, 
+                                       float injection_rate, int current_step) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int z = blockIdx.z * blockDim.z + threadIdx.z;
+    
+    if (x >= nx || y >= ny || z >= nz) return;
+    
+    int idx = z * nx * ny + y * nx + x;
+    
+    // Calculate distance from source center
+    int center_x = nx / 2;
+    int center_y = ny / 8;
+    int center_z = nz / 2;
+    
+    float dx = x - center_x;
+    float dy = y - center_y;
+    float dz = z - center_z;
+    float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+    
+    // Check if point is within source radius
+    if (dist < source_radius) {
+        // Initialize random number generator
+        curandState state;
+        curand_init(clock64(), idx + current_step, 0, &state);
+        
+        // Add smoke density with injection rate
+        float density_increase = injection_rate * (1.0f - dist / source_radius) * (0.8f + 0.2f * curand_uniform(&state));
+        // float density_increase = 0.1f;
+        rho[idx] = density_increase;
+
+        // if( x==center_x && y==center_y && z==center_z) {
+        //     printf("Injecting smoke source, (x, y, z): (%d, %d, %d), density_increase: %f, rho: %f\n", x, y, z, density_increase, rho[idx]);
+        // }
+
+        if(rho[idx] > 1.0f) {
+            rho[idx] = 1.0f;
+        }
+
+        // Update fluid distribution function
+        for (int i = 0; i < 19; i++) {
+            f[19*idx + i] = w[i] * rho[idx];
+        }
+        
+        // Add temperature with injection rate
+        float temp_increase = injection_rate * (source_temperature - temperature[idx]) * (1.0f - dist / source_radius) * (0.8f + 0.4f * curand_uniform(&state));
+        temperature[idx] += temp_increase;
+        
+        // Update temperature distribution function
+        for (int i = 0; i < 7; i++) {
+            g[7*idx + i] += w_t[i] * temp_increase;
+        }
+    }
 }
 
 BoltzmannSolver::BoltzmannSolver(int nx, int ny, int nz, const InitParams& params)
@@ -307,40 +343,40 @@ void BoltzmannSolver::initializeFields() {
     float source_radius = init_params_.source_radius;
     float source_density = init_params_.source_density;
     
-    for (int z = 0; z < nz_; z++) {
-        for (int y = 0; y < ny_; y++) {
-            for (int x = 0; x < nx_; x++) {
-                float dx = x - center_x;
-                float dy = y - center_y;
-                float dz = z - center_z;
-                float dist = sqrtf(dx*dx + dy*dy + dz*dz);
-                int idx = z * nx_ * ny_ + y * nx_ + x;
+    // for (int z = 0; z < nz_; z++) {
+    //     for (int y = 0; y < ny_; y++) {
+    //         for (int x = 0; x < nx_; x++) {
+    //             float dx = x - center_x;
+    //             float dy = y - center_y;
+    //             float dz = z - center_z;
+    //             float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+    //             int idx = z * nx_ * ny_ + y * nx_ + x;
 
-                if (dist < source_radius) {
-                    initial_density[idx] = source_density;
-                    for (int i = 0; i < 19; i++) {
-                        initial_f_distribution[19 * idx + i] = w[i] * initial_density[idx];
-                    }
-                }
-            }
-        }
-    }
+    //             if (dist < source_radius) {
+    //                 initial_density[idx] = source_density;
+    //                 for (int i = 0; i < 19; i++) {
+    //                     initial_f_distribution[19 * idx + i] = w[i] * initial_density[idx];
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
-    // Set high temperature region at the bottom
-    int bottom_height = ny_ / 4;
-    for (int z = 0; z < nz_; z++) {
-        for (int y = 0; y < bottom_height; y++) {
-            for (int x = 0; x < nx_; x++) {
-                int idx = z * nx_ * ny_ + y * nx_ + x;
-                float height_factor = 1.0f - (float)y / bottom_height;
-                initial_temperature[idx] = init_params_.temperature + 200.0f * height_factor;
-                // Set initial temperature distribution function
-                for (int i = 0; i < 7; i++) {
-                    initial_g_distribution[7*idx + i] = w_t[i] * initial_temperature[idx];
-                }
-            }
-        }
-    }
+    // // Set high temperature region at the bottom
+    // int bottom_height = ny_ / 4;
+    // for (int z = 0; z < nz_; z++) {
+    //     for (int y = 0; y < bottom_height; y++) {
+    //         for (int x = 0; x < nx_; x++) {
+    //             int idx = z * nx_ * ny_ + y * nx_ + x;
+    //             float height_factor = 1.0f - (float)y / bottom_height;
+    //             initial_temperature[idx] = init_params_.temperature + 200.0f * height_factor;
+    //             // Set initial temperature distribution function
+    //             for (int i = 0; i < 7; i++) {
+    //                 initial_g_distribution[7*idx + i] = w_t[i] * initial_temperature[idx];
+    //             }
+    //         }
+    //     }
+    // }
 
     cudaMemcpy(d_f_distribution, initial_f_distribution.data(), grid_size * 19 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_g_distribution, initial_g_distribution.data(), grid_size * 7 * sizeof(float), cudaMemcpyHostToDevice);
@@ -420,6 +456,19 @@ void BoltzmannSolver::updateTemperature() {
     cudaDeviceSynchronize();
 }
 
+void BoltzmannSolver::injectSmokeSource() {
+    
+    dim3 block(8, 8, 8);
+    dim3 grid((nx_ + block.x - 1) / block.x,
+              (ny_ + block.y - 1) / block.y,
+              (nz_ + block.z - 1) / block.z);
+
+    injectSmokeSourceKernel<<<grid, block>>>(d_f_distribution, d_g_distribution, d_density, d_temperature,
+                                            nx_, ny_, nz_, init_params_.source_radius, init_params_.source_density,
+                                            init_params_.source_temperature, init_params_.source_injection_rate, current_step_);
+    cudaDeviceSynchronize();
+}
+
 void BoltzmannSolver::updateMacroscopic() {
     dim3 block(8, 8, 8);
     dim3 grid((nx_ + block.x - 1) / block.x,
@@ -475,8 +524,6 @@ void BoltzmannSolver::simulate(float dt, int steps) {
     float period = 30.0f;
     float omega = 2.0f * 3.14159265358979323846f / period;
     for (int step = 0; step < steps; ++step) {
-        current_step_++;
-
         cudaMemcpy(d_density, h_density, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyHostToDevice);
         cudaMemcpy(d_temperature, h_temperature, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyHostToDevice);
 
@@ -490,6 +537,11 @@ void BoltzmannSolver::simulate(float dt, int steps) {
         streamTemperature();
         updateTemperature();
 
+
+        if(init_params_.continuous_source && current_step_ % init_params_.source_injection_interval == 0) {
+            injectSmokeSource();
+        }
+
         copyToHost();
 
         // Display progress
@@ -502,6 +554,8 @@ void BoltzmannSolver::simulate(float dt, int steps) {
                   << " | Avg velocity: " << getAverageVelocity()
                   << " | Max velocity: " << getMaxVelocity()
                   << std::flush;
+
+        current_step_++;
     }
 }
 
