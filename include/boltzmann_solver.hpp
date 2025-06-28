@@ -11,7 +11,19 @@ class VDBExporter;
 class BoltzmannSolver
 {
 public:
-    BoltzmannSolver(int nx, int ny, int nz);
+    struct InitParams {
+        float tau_f = 1.3f;
+        float tau_t = 0.8f;
+        float temperature = 300.0f;
+        float wind_base = 0.05f;
+        float wind_factor = 0.2f;
+        float source_radius = 6.0f;
+        float source_density = 0.5f;
+        float velocity_limit = 0.3f;
+        // Add more parameters as needed
+    };
+
+    BoltzmannSolver(int nx, int ny, int nz, const InitParams& params);
     ~BoltzmannSolver();
 
     // Simulation initialization
@@ -33,12 +45,14 @@ public:
     float getMaxDensity() const;
     float getAverageDensity() const;
     float getMaxTemperature() const;
+    float getAverageTemperature() const;
     float getAverageVelocity() const;
     float getMaxVelocity() const;
 
 private:
     int nx_, ny_, nz_;  // Grid size
     int current_step_ = 0;  // Current simulation step count
+    InitParams init_params_;
 
     // GPU memory - for fluid simulation
     float* d_f_distribution;  // Fluid distribution function

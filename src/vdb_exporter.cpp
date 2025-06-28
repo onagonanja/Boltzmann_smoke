@@ -13,13 +13,13 @@ VDBExporter::~VDBExporter() {
 void VDBExporter::initializeGrids() {
     // Initialize density grid
     density_grid_ = openvdb::FloatGrid::create(0.0f);
-    density_grid_->setName("density");  // Change to name easily recognized by Blender
-    density_grid_->setTransform(openvdb::math::Transform::createLinearTransform(0.1));  // Set scale to 0.1
+    density_grid_->setName("density");
+    density_grid_->setTransform(openvdb::math::Transform::createLinearTransform(0.1)); 
 
     // Initialize velocity grid
     velocity_grid_ = openvdb::Vec3fGrid::create(openvdb::Vec3f(0.0f));
-    velocity_grid_->setName("velocity");  // Change to name easily recognized by Blender
-    velocity_grid_->setTransform(openvdb::math::Transform::createLinearTransform(0.1));  // Set scale to 0.1
+    velocity_grid_->setName("velocity");
+    velocity_grid_->setTransform(openvdb::math::Transform::createLinearTransform(0.1));
 }
 
 void VDBExporter::updateGrids(const float* density, const float* velocity) {
@@ -36,23 +36,23 @@ void VDBExporter::updateGrids(const float* density, const float* velocity) {
         for (int y = 0; y < ny_; ++y) {
             for (int x = 0; x < nx_; ++x) {
                 int idx = z * nx_ * ny_ + y * nx_ + x;
-                openvdb::Coord coord(x, y, z);
+                openvdb::Coord coord(x, z, y);
                 
                 // Update density (increase scale for better visibility)
-                float scaled_density = density[idx] * 10.0f;  // Multiply density by 10
-                if (scaled_density > 0.001f) {  // Lower threshold to 0.001
+                float scaled_density = density[idx] * 10.0f; 
+                if (scaled_density > 0.001f) {
                     density_accessor.setValue(coord, scaled_density);
                     active_voxels++;
                     max_density = std::max(max_density, scaled_density);
                 }
                 
-                // Update velocity (adjust scale)
+                // Update velocity
                 openvdb::Vec3f vel(
-                    velocity[3*idx] * 0.1f,  // Multiply velocity by 0.1
-                    velocity[3*idx + 1] * 0.1f,
-                    velocity[3*idx + 2] * 0.1f
-                );
-                if (scaled_density > 0.001f) {  // Lower threshold to 0.001
+                    velocity[3*idx],
+                    velocity[3*idx + 2],
+                    velocity[3*idx + 1]
+                 );
+                if (scaled_density > 0.001f) {
                     velocity_accessor.setValue(coord, vel);
                 }
             }

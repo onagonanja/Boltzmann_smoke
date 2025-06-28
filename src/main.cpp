@@ -10,6 +10,7 @@
 #include <string>
 #include <iomanip>  // Added for std::setw, std::setfill
 #include <filesystem>  // For filesystem operations
+#include <nlohmann/json.hpp>
 
 int main()
 {
@@ -21,8 +22,7 @@ int main()
         const int nz = 128 * n_scale;
         const int maxSteps = 100;
         const float dt = 0.1f;
-        const float viscosity = 0.1f;
-        const float diffusion = 0.1f;
+
         
         // Whether to save simulation results
         bool saveSimulation = true;
@@ -31,6 +31,32 @@ int main()
         // Whether to replay simulation results
         bool replaySimulation = false;
         std::string replayFilename = "simulation_data.bin";
+
+        // Load initialization parameters from JSON
+        BoltzmannSolver::InitParams init_params;
+        std::ifstream ifs("../init_params.json");
+        if (ifs) {
+            nlohmann::json j;
+            ifs >> j;
+            init_params.tau_f = j.value("tau_f", 1.3f);
+            init_params.tau_t = j.value("tau_t", 0.8f);
+            init_params.temperature = j.value("temperature", 300.0f);
+            
+            // Load wind parameters
+            if (j.contains("wind")) {
+                init_params.wind_base = j["wind"].value("base_wind", 0.05f);
+                init_params.wind_factor = j["wind"].value("wind_factor", 0.2f);
+            }
+            
+            // Load smoke source parameters
+            if (j.contains("smoke_source")) {
+                init_params.source_radius = j["smoke_source"].value("radius", 6.0f);
+                init_params.source_density = j["smoke_source"].value("density", 0.5f);
+            }
+            
+            // Load velocity limit parameter
+            init_params.velocity_limit = j.value("velocity_limit", 0.3f);
+        }
 
         if (replaySimulation) {
             // Replay simulation results
@@ -50,7 +76,7 @@ int main()
             }
         } else {
             // Normal simulation execution
-            BoltzmannSolver solver(nx, ny, nz);
+            BoltzmannSolver solver(nx, ny, nz, init_params);
             Visualizer visualizer(800, 600);  // Create 800x600 window
             VDBExporter exporter(nx, ny, nz);
             

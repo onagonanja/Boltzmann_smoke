@@ -30,8 +30,14 @@ __device__ __constant__ float c_t_dy[7] = {0.0f,  0.0f,  0.0f,  1.0f, -1.0f,  0.
 __device__ __constant__ float c_t_dz[7] = {0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  1.0f, -1.0f};
 __device__ __constant__ float w_t[7] = {1.0f/4.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f};
 
+__device__ int found_negative_f = 0;
+__constant__ int focused_point_x = 64;
+__constant__ int focused_point_y = 32;
+__constant__ int focused_point_z = 49;
+
+
 // Fluid collision step
-__global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* vel_y, float* vel_z, float* tau_f, float* temperature, int nx, int ny, int nz, int current_step) {
+__global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* vel_y, float* vel_z, float* tau_f, float* temperature, int nx, int ny, int nz, int current_step, float velocity_limit) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= nx * ny * nz) return;
 
@@ -40,40 +46,54 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
     curand_init(clock64(), idx + current_step, 0, &state);
 
     float f_eq[19];
-    float rho_local = fmaxf(fminf(rho[idx], 10.0f), 0.0f);
+    float rho_local = rho[idx];
     float3 vel_local = make_float3(vel_x[idx], vel_y[idx], vel_z[idx]);
 
     // Calculate buoyancy force based on temperature
     const float g = 9.81f;
-    const float rho_air = 0.5f;
-    const float beta = 0.01f;
+    const float rho_air = 10.5f;
+    const float beta = 0.1f;
     const float T_ref = 300.0f;
     float T_local = temperature[idx];
     float thermal_factor = (T_local - T_ref) / T_ref;
-    float rand_factor = 1.3f + 1.7f * curand_uniform(&state);
+    float rand_factor = 0.9f + 0.1f * curand_uniform(&state);
     float buoyancy_force = -beta * g * (rho_local * (1.0f - thermal_factor) - rho_air) * rand_factor;
     vel_local.y += buoyancy_force;
 
+    int x = idx % nx;
+    int y = (idx % (nx * ny)) / nx;
+    int z = idx / (nx * ny);
+
     // Limit velocity
     float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
-    if (u_sq > 0.1f) {
-        float scale = 1.0f / sqrtf(u_sq);
+    float u_mag = sqrtf(u_sq);
+    if (u_mag > velocity_limit) {
+        float scale = velocity_limit / u_mag;
         vel_local.x *= scale;
         vel_local.y *= scale;
         vel_local.z *= scale;
-        u_sq = 1.0f;
+        u_sq = velocity_limit * velocity_limit;
     }
 
     // Calculate equilibrium distribution
     for (int i = 0; i < 19; i++) {
         float ci_dot_u = c_dx[i] * vel_local.x + c_dy[i] * vel_local.y + c_dz[i] * vel_local.z;
+        float f_eq_temp = 1.0f + 3.0f * ci_dot_u + 4.5f * ci_dot_u * ci_dot_u - 1.5f * u_sq;
         f_eq[i] = w[i] * rho_local * (1.0f + 3.0f * ci_dot_u + 4.5f * ci_dot_u * ci_dot_u - 1.5f * u_sq);
     }
 
-    float tau_rand = 0.01f * curand_uniform(&state);
-    float tau = tau_f[idx] + tau_rand;
+    float tau_rand = 0.1f * curand_uniform(&state);
+    float tau = tau_f[idx] + tau_rand; 
     for (int i = 0; i < 19; i++) {
+        float f_tmp = f[19*idx + i];
         f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]);
+        
+        // if(f[19*idx + i] < 0.0f && found_negative_f == 0 && x == focused_point_x && y == focused_point_y && z == focused_point_z) {
+        //     found_negative_f = 1;
+        //     printf("Step: %d, Collision, (x, y, z): (%d, %d, %d), rho_local: %f, f_eq[i]: %f, f_tmp: %f, f[19*idx + i]: %f\n", current_step, x, y, z, rho_local, f_eq[i], f_tmp, f[19*idx + i]);
+        // }else if(x == focused_point_x && y == focused_point_y && z == focused_point_z && current_step == 1) {
+        //     printf("Step: %d, Collision, (x, y, z): (%d, %d, %d), f[19*idx + i]: %f\n", current_step, x, y, z, f[19*idx + i]);
+        // }
     }
 }
 
@@ -186,6 +206,10 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
         vel_local.x += c_dx[i] * fi;
         vel_local.y += c_dy[i] * fi;
         vel_local.z += c_dz[i] * fi;
+
+        // if(x == focused_point_x && y == focused_point_y && z == focused_point_z && found_negative_f == 0) {
+        //     printf("Macroscopic, (x, y, z): (%d, %d, %d), f[19*idx + i]: %f\n", x, y, z, fi);
+        // }
     }
     
     // Normalize velocity
@@ -200,10 +224,14 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
     vel_x[idx] = vel_local.x;
     vel_y[idx] = vel_local.y;
     vel_z[idx] = vel_local.z;
+
+    // if(x == focused_point_x && y == focused_point_y && z == focused_point_z && found_negative_f == 0) {
+    //     printf("Macroscopic, (x, y, z): (%d, %d, %d), rho_local: %f, vel_local: (%f, %f, %f)\n", x, y, z, rho_local, vel_local.x, vel_local.y, vel_local.z);
+    // }
 }
 
-BoltzmannSolver::BoltzmannSolver(int nx, int ny, int nz)
-    : nx_(nx), ny_(ny), nz_(nz), d_f_distribution(nullptr), d_g_distribution(nullptr), d_density(nullptr), d_velocity_x(nullptr), d_velocity_y(nullptr), d_velocity_z(nullptr), d_temperature(nullptr), d_tau_f(nullptr), d_tau_t(nullptr), h_density(nullptr), h_temperature(nullptr) {
+BoltzmannSolver::BoltzmannSolver(int nx, int ny, int nz, const InitParams& params)
+    : nx_(nx), ny_(ny), nz_(nz), d_f_distribution(nullptr), d_g_distribution(nullptr), d_density(nullptr), d_velocity_x(nullptr), d_velocity_y(nullptr), d_velocity_z(nullptr), d_temperature(nullptr), d_tau_f(nullptr), d_tau_t(nullptr), h_density(nullptr), h_temperature(nullptr), init_params_(params) {
     allocateMemory();
     initializeFields();
 }
@@ -244,13 +272,39 @@ void BoltzmannSolver::freeMemory() {
 
 void BoltzmannSolver::initializeFields() {
     size_t grid_size = nx_ * ny_ * nz_;
-    std::vector<float> initial_density(grid_size, 0.0f);
+    std::vector<float> initial_density(grid_size, 0.00f);
     std::vector<float> initial_velocity(grid_size * 3, 0.0f);
     std::vector<float> initial_f_distribution(grid_size * 19, 0.0f);
     std::vector<float> initial_g_distribution(grid_size * 7, 0.0f);
-    std::vector<float> initial_tau_f(grid_size, 1.5f);
-    std::vector<float> initial_tau_t(grid_size, 0.5f);
-    std::vector<float> initial_temperature(grid_size, 300.0f);
+    std::vector<float> initial_tau_f(grid_size, init_params_.tau_f);
+    std::vector<float> initial_tau_t(grid_size, init_params_.tau_t);
+    std::vector<float> initial_temperature(grid_size, init_params_.temperature);
+
+    // Set initial density
+    int center_x = nx_ / 2;
+    int center_y = ny_ / 8;
+    int center_z = nz_ / 2;
+    float source_radius = init_params_.source_radius;
+    float source_density = init_params_.source_density;
+    
+    for (int z = 0; z < nz_; z++) {
+        for (int y = 0; y < ny_; y++) {
+            for (int x = 0; x < nx_; x++) {
+                float dx = x - center_x;
+                float dy = y - center_y;
+                float dz = z - center_z;
+                float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+                int idx = z * nx_ * ny_ + y * nx_ + x;
+
+                if (dist < source_radius) {
+                    initial_density[idx] = source_density;
+                    for (int i = 0; i < 19; i++) {
+                        initial_f_distribution[19 * idx + i] = w[i] * initial_density[idx];
+                    }
+                }
+            }
+        }
+    }
 
     // Set high temperature region at the bottom
     int bottom_height = ny_ / 4;
@@ -259,8 +313,7 @@ void BoltzmannSolver::initializeFields() {
             for (int x = 0; x < nx_; x++) {
                 int idx = z * nx_ * ny_ + y * nx_ + x;
                 float height_factor = 1.0f - (float)y / bottom_height;
-                initial_temperature[idx] = 300.0f + 200.0f * height_factor;
-                
+                initial_temperature[idx] = init_params_.temperature + 200.0f * height_factor;
                 // Set initial temperature distribution function
                 for (int i = 0; i < 7; i++) {
                     initial_g_distribution[7*idx + i] = w_t[i] * initial_temperature[idx];
@@ -294,10 +347,7 @@ void BoltzmannSolver::streamFluid() {
     // Allocate temporary buffer
     float* d_f_new;
     cudaMalloc(&d_f_new, nx_ * ny_ * nz_ * 19 * sizeof(float));
-    
-    // Initialize temporary buffer with zeros
-    cudaMemset(d_f_new, 0, nx_ * ny_ * nz_ * 19 * sizeof(float));
-    
+        
     // Execute streaming kernel
     streamingKernel<<<grid, block>>>(d_f_distribution, d_f_new, nx_, ny_, nz_);
     cudaDeviceSynchronize();
@@ -330,7 +380,7 @@ void BoltzmannSolver::collideFluid() {
     int grid_size = nx_ * ny_ * nz_;
     int block_size = 256;
     int num_blocks = (grid_size + block_size - 1) / block_size;
-    fluidCollisionKernel<<<num_blocks, block_size>>>(d_f_distribution, d_density, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_f, d_temperature, nx_, ny_, nz_, current_step_);
+    fluidCollisionKernel<<<num_blocks, block_size>>>(d_f_distribution, d_density, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_f, d_temperature, nx_, ny_, nz_, current_step_, init_params_.velocity_limit);
     cudaDeviceSynchronize();
 }
 
@@ -364,6 +414,7 @@ void BoltzmannSolver::updateMacroscopic() {
 void BoltzmannSolver::copyToHost() {
     // Data transfer from GPU to CPU
     cudaMemcpy(h_density, d_density, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_temperature, d_temperature, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyDeviceToHost);
     
     // Transfer velocity vectors
     std::vector<float> temp_vel_x(nx_ * ny_ * nz_);
@@ -406,40 +457,17 @@ void BoltzmannSolver::simulate(float dt, int steps) {
     for (int step = 0; step < steps; ++step) {
         current_step_++;
 
-        // Inject smoke source (also set temperature)
-        int center_x = nx_ / 2;
-        int center_y = ny_ / 8;
-        int center_z = nz_ / 2;
-        float source_radius = 6.0f;
-        float source_density = 2.1f;
-
-        for (int z = 0; z < nz_; z++) {
-            for (int y = 0; y < ny_; y++) {
-                for (int x = 0; x < nx_; x++) {
-                    float dx = x - center_x;
-                    float dy = y - center_y;
-                    float dz = z - center_z;
-                    float dist = sqrtf(dx*dx + dy*dy + dz*dz);
-                    int idx = z * nx_ * ny_ + y * nx_ + x;
-
-                    if (dist < source_radius && current_step_ < 10) {
-                        h_density[idx] = source_density * (0.5f + 0.5f * sinf(omega * current_step_));
-                        h_temperature[idx] = 500.0f;
-                    }
-                }
-            }
-        }
         cudaMemcpy(d_density, h_density, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyHostToDevice);
         cudaMemcpy(d_temperature, h_temperature, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyHostToDevice);
 
         // Fluid simulation steps
-        streamFluid();
         collideFluid();
+        streamFluid();
         updateMacroscopic();
 
         // Temperature simulation steps
-        streamTemperature();
         collideTemperature();
+        streamTemperature();
         updateTemperature();
 
         copyToHost();
@@ -450,6 +478,7 @@ void BoltzmannSolver::simulate(float dt, int steps) {
                   << " | Max density: " << getMaxDensity() 
                   << " | Avg density: " << getAverageDensity() 
                   << " | Max temperature: " << getMaxTemperature()
+                  << " | Avg temperature: " << getAverageTemperature()
                   << " | Avg velocity: " << getAverageVelocity()
                   << " | Max velocity: " << getMaxVelocity()
                   << std::flush;
@@ -501,6 +530,19 @@ float BoltzmannSolver::getMaxTemperature() const {
         max_temp = std::max(max_temp, h_temperature[i]);
     }
     return max_temp;
+}
+
+float BoltzmannSolver::getAverageTemperature() const {
+    float total_temp = 0.0f;
+    int active_count = 0;
+    int grid_size = nx_ * ny_ * nz_;
+    for (int i = 0; i < grid_size; i++) {
+        if (h_density[i] > 0.001f) {
+            total_temp += h_temperature[i];
+            active_count++;
+        }
+    }
+    return active_count > 0 ? total_temp / active_count : 0.0f;
 }
 
 float BoltzmannSolver::getAverageVelocity() const {
