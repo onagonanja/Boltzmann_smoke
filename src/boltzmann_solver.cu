@@ -96,13 +96,13 @@ __global__ void temperatureCollisionKernel(float* g, float* temperature, float* 
 
     float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
     float u_mag = sqrtf(u_sq);
-    if (u_mag > velocity_limit) {
-        float scale = velocity_limit / u_mag;
-        vel_local.x *= scale;
-        vel_local.y *= scale;
-        vel_local.z *= scale;
-        u_sq = velocity_limit * velocity_limit;
-    }
+    // if (u_mag > velocity_limit) {
+    //     float scale = velocity_limit / u_mag;
+    //     vel_local.x *= scale;
+    //     vel_local.y *= scale;
+    //     vel_local.z *= scale;
+    //     u_sq = velocity_limit * velocity_limit;
+    // }
 
     // Calculate equilibrium distribution for temperature field
     for (int i = 0; i < 7; i++) {
