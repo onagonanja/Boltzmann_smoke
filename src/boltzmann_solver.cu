@@ -52,7 +52,7 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
     // Calculate buoyancy force based on temperature
     const float g = 9.81f;
     const float rho_air = 10.5f;
-    const float beta = 0.01f;
+    const float beta = 0.1f;
     const float T_ref = 300.0f;
     float T_local = temperature[idx];
     float thermal_factor = (T_local - T_ref) / T_ref;
@@ -82,8 +82,8 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
         f_eq[i] = w[i] * rho_local * (1.0f + 3.0f * ci_dot_u + 4.5f * ci_dot_u * ci_dot_u - 1.5f * u_sq);
     }
 
-    // float tau_rand = 0.01f * curand_uniform(&state);
-    float tau = tau_f[idx];
+    float tau_rand = 0.1f * curand_uniform(&state);
+    float tau = tau_f[idx] + tau_rand; 
     for (int i = 0; i < 19; i++) {
         float f_tmp = f[19*idx + i];
         f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]);
@@ -322,12 +322,6 @@ void BoltzmannSolver::initializeFields() {
         }
     }
 
-    for (int idx = 0; idx < grid_size; ++idx) {
-        for (int i = 0; i < 19; ++i) {
-            initial_f_distribution[19 * idx + i] = w[i] * 1.0f;
-        }
-    }
-
     cudaMemcpy(d_f_distribution, initial_f_distribution.data(), grid_size * 19 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_g_distribution, initial_g_distribution.data(), grid_size * 7 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_density, initial_density.data(), grid_size * sizeof(float), cudaMemcpyHostToDevice);
@@ -463,30 +457,6 @@ void BoltzmannSolver::simulate(float dt, int steps) {
     for (int step = 0; step < steps; ++step) {
         current_step_++;
 
-        // Inject smoke source (also set temperature)
-        // int center_x = nx_ / 2;
-        // int center_y = ny_ / 8;
-        // int center_z = nz_ / 2;
-        // float source_radius = init_params_.source_radius;
-        // float source_density = init_params_.source_density;
-
-        // for (int z = 0; z < nz_; z++) {
-        //     for (int y = 0; y < ny_; y++) {
-        //         for (int x = 0; x < nx_; x++) {
-        //             float dx = x - center_x;
-        //             float dy = y - center_y;
-        //             float dz = z - center_z;
-        //             float dist = sqrtf(dx*dx + dy*dy + dz*dz);
-        //             int idx = z * nx_ * ny_ + y * nx_ + x;
-
-        //             // if (dist < source_radius && current_step_ < 2) {
-        //             //     std::cout << "source_density: " << source_density << std::endl;
-        //             //     h_density[idx] = source_density * (0.9f + 0.1f * sinf(omega * current_step_));
-        //             //     h_temperature[idx] = 500.0f;
-        //             // }
-        //         }
-        //     }
-        // }
         cudaMemcpy(d_density, h_density, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyHostToDevice);
         cudaMemcpy(d_temperature, h_temperature, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyHostToDevice);
 
