@@ -7,7 +7,8 @@
 #include <glm/gtc/type_ptr.hpp>
 
 Visualizer::Visualizer(int width, int height)
-    : window_width(width), window_height(height), window(nullptr), shaderProgram(0),
+    : window_width(width * 2), window_height(height), window(nullptr), 
+      densityShaderProgram(0), temperatureShaderProgram(0),
       camera_pos(0.0f, -5.0f, 20.0f), camera_front(0.0f, 0.0f, -1.0f), camera_up(0.0f, 1.0f, 0.0f),
       yaw(-90.0f), pitch(0.0f), last_x(width / 2.0f), last_y(height / 2.0f), first_mouse(true)
 {
@@ -17,7 +18,7 @@ Visualizer::Visualizer(int width, int height)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    window = glfwCreateWindow(width, height, "Boltzmann Smoke Simulation", nullptr, nullptr);
+    window = glfwCreateWindow(window_width, window_height, "Boltzmann Smoke Simulation - Density | Temperature", nullptr, nullptr);
     if (!window) {
         glfwTerminate();
         throw std::runtime_error("Failed to create window");
@@ -42,7 +43,8 @@ Visualizer::~Visualizer() {
 }
 
 void Visualizer::initShaders() {
-    const char* vertexShaderSource = R"(
+    // Density field shader
+    const char* densityVertexShaderSource = R"(
         #version 330 core
         layout (location = 0) in vec3 aPos;
         layout (location = 1) in float aDensity;
@@ -55,7 +57,7 @@ void Visualizer::initShaders() {
             Density = aDensity;
         }
     )";
-    const char* fragmentShaderSource = R"(
+    const char* densityFragmentShaderSource = R"(
         #version 330 core
         in float Density;
         out vec4 FragColor;
@@ -65,72 +67,98 @@ void Visualizer::initShaders() {
             FragColor = vec4(smokeColor, alpha);
         }
     )";
-    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
-    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-    shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
+    
+    // Temperature field shader
+    const char* temperatureVertexShaderSource = R"(
+        #version 330 core
+        layout (location = 0) in vec3 aPos;
+        layout (location = 1) in float aTemperature;
+        out float Temperature;
+        uniform mat4 model;
+        uniform mat4 view;
+        uniform mat4 projection;
+        void main() {
+            gl_Position = projection * view * model * vec4(aPos, 1.0);
+            Temperature = aTemperature;
+        }
+    )";
+    const char* temperatureFragmentShaderSource = R"(
+        #version 330 core
+        in float Temperature;
+        out vec4 FragColor;
+        void main() {
+            // Color gradient from blue (cold) to red (hot)
+            // Show temperatures from 280K to 500K
+            float normalizedTemp = clamp((Temperature - 280.0) / 220.0, 0.0, 1.0);
+            vec3 coldColor = vec3(0.0, 0.0, 1.0);  // Blue
+            vec3 hotColor = vec3(1.0, 0.0, 0.0);   // Red
+            vec3 tempColor = mix(coldColor, hotColor, normalizedTemp);
+            float alpha = min(normalizedTemp * 2.0 + 0.2, 0.8);  // Minimum alpha of 0.2
+            FragColor = vec4(tempColor, alpha);
+        }
+    )";
+    
+    // Create density shader program
+    unsigned int densityVertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(densityVertexShader, 1, &densityVertexShaderSource, NULL);
+    glCompileShader(densityVertexShader);
+    unsigned int densityFragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(densityFragmentShader, 1, &densityFragmentShaderSource, NULL);
+    glCompileShader(densityFragmentShader);
+    densityShaderProgram = glCreateProgram();
+    glAttachShader(densityShaderProgram, densityVertexShader);
+    glAttachShader(densityShaderProgram, densityFragmentShader);
+    glLinkProgram(densityShaderProgram);
+    glDeleteShader(densityVertexShader);
+    glDeleteShader(densityFragmentShader);
+    
+    // Create temperature shader program
+    unsigned int temperatureVertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(temperatureVertexShader, 1, &temperatureVertexShaderSource, NULL);
+    glCompileShader(temperatureVertexShader);
+    unsigned int temperatureFragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(temperatureFragmentShader, 1, &temperatureFragmentShaderSource, NULL);
+    glCompileShader(temperatureFragmentShader);
+    temperatureShaderProgram = glCreateProgram();
+    glAttachShader(temperatureShaderProgram, temperatureVertexShader);
+    glAttachShader(temperatureShaderProgram, temperatureFragmentShader);
+    glLinkProgram(temperatureShaderProgram);
+    glDeleteShader(temperatureVertexShader);
+    glDeleteShader(temperatureFragmentShader);
 }
 
-void Visualizer::update(const float* density_data, int nx, int ny, int nz) {
-    if (!window) return;
-
-    // Calculate statistics
-    float max_density = 0.0f;
-    float avg_density = 0.0f;
-    int active_voxels = 0;
-    int total_voxels = nx * ny * nz;
-
-    for (int z = 0; z < nz; z++) {
-        for (int y = 0; y < ny; y++) {
-            for (int x = 0; x < nx; x++) {
-                float density = density_data[z * nx * ny + y * nx + x];
-                if (density > 0.00197f) {  // Adjust threshold to average density value
-                    active_voxels++;
-                    max_density = std::max(max_density, density);
-                    avg_density += density;
-                }
-            }
-        }
-    }
-    avg_density = active_voxels > 0 ? avg_density / active_voxels : 0.0f;
-
-    // Existing rendering code
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+void Visualizer::renderField(const float* data, int nx, int ny, int nz, bool isTemperature, int viewport_x, int viewport_y, int viewport_width, int viewport_height) {
+    glViewport(viewport_x, viewport_y, viewport_width, viewport_height);
+    
+    unsigned int shaderProgram = isTemperature ? temperatureShaderProgram : densityShaderProgram;
     glUseProgram(shaderProgram);
+    
     glm::mat4 view = glm::lookAt(camera_pos, camera_pos + camera_front, camera_up);
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)window_width / (float)window_height, 0.1f, 100.0f);
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)viewport_width / (float)viewport_height, 0.1f, 100.0f);
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+    
+    float threshold = isTemperature ? 280.0f : 0.00197f;
+    
     for (int z = 0; z < nz; z++) {
         for (int y = 0; y < ny; y++) {
             for (int x = 0; x < nx; x++) {
-                float density = density_data[z * nx * ny + y * nx + x];
-                if (density > 0.00197f) {
+                float value = data[z * nx * ny + y * nx + x];
+                if (isTemperature ? (value > threshold) : (value > threshold)) {
                     glm::mat4 model = glm::mat4(1.0f);
                     model = glm::translate(model, glm::vec3(x - nx/2, y - ny/2, z - nz/2) * 0.1f);
                     model = glm::scale(model, glm::vec3(0.1f));
                     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
+                    
                     float vertices[] = {
-                        -0.5f, -0.5f,  0.5f, density,
-                         0.5f, -0.5f,  0.5f, density,
-                         0.5f,  0.5f,  0.5f, density,
-                        -0.5f,  0.5f,  0.5f, density,
-                        -0.5f, -0.5f, -0.5f, density,
-                         0.5f, -0.5f, -0.5f, density,
-                         0.5f,  0.5f, -0.5f, density,
-                        -0.5f,  0.5f, -0.5f, density,
+                        -0.5f, -0.5f,  0.5f, value,
+                         0.5f, -0.5f,  0.5f, value,
+                         0.5f,  0.5f,  0.5f, value,
+                        -0.5f,  0.5f,  0.5f, value,
+                        -0.5f, -0.5f, -0.5f, value,
+                         0.5f, -0.5f, -0.5f, value,
+                         0.5f,  0.5f, -0.5f, value,
+                        -0.5f,  0.5f, -0.5f, value,
                     };
                     unsigned int indices[] = {
                         0, 1, 2, 2, 3, 0,
@@ -161,6 +189,32 @@ void Visualizer::update(const float* density_data, int nx, int ny, int nz) {
             }
         }
     }
+}
+
+void Visualizer::update(const float* density_data, const float* temperature_data, int nx, int ny, int nz, bool show_temperature) {
+    if (!window) return;
+
+    // Clear the entire window
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    if (show_temperature) {
+        // Calculate viewport dimensions for split view
+        int half_width = window_width / 2;
+        
+        // Render density field on the left half
+        renderField(density_data, nx, ny, nz, false, 0, 0, half_width, window_height);
+        
+        // Render temperature field on the right half
+        renderField(temperature_data, nx, ny, nz, true, half_width, 0, half_width, window_height);
+    } else {
+        // Render only density field in full window
+        renderField(density_data, nx, ny, nz, false, 0, 0, window_width, window_height);
+    }
+
     glfwSwapBuffers(window);
     glfwPollEvents();
 }

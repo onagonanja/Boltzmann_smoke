@@ -27,6 +27,8 @@ public:
         float source_temperature = 500.0f;  // Source temperature
         bool continuous_source = true;  // Enable continuous smoke source
         int source_injection_interval = 10;  // Interval between smoke injections
+        int simulation_steps_per_frame = 30;  // Number of simulation steps per frame
+        bool show_temperature_field = true;  // Show temperature field in visualizer
         // Add more parameters as needed
     };
 

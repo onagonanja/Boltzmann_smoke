@@ -9,6 +9,8 @@
   "source_temperature": 500.0,
   "continuous_source": true,
   "source_injection_interval": 10,
+  "simulation_steps_per_frame": 30,
+  "show_temperature_field": false,
   "wind": {
     "base_wind": 0.05,
     "wind_factor": 0.2

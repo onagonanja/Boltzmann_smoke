@@ -96,6 +96,7 @@ __global__ void temperatureCollisionKernel(float* g, float* temperature, float* 
 
     float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
     float u_mag = sqrtf(u_sq);
+    velocity_limit = velocity_limit * 1.0f;
     // if (u_mag > velocity_limit) {
     //     float scale = velocity_limit / u_mag;
     //     vel_local.x *= scale;
@@ -140,13 +141,13 @@ __global__ void temperatureStreamingKernel(float* g, float* g_new, int nx, int n
         int y_next = y + c_t_dy[i];
         int z_next = z + c_t_dz[i];
 
-        // Periodic boundary conditions
-        if (x_next < 0) x_next = nx - 1;
-        if (x_next >= nx) x_next = 0;
-        if (y_next < 0) y_next = ny - 1;
-        if (y_next >= ny) y_next = 0;
-        if (z_next < 0) z_next = nz - 1;
-        if (z_next >= nz) z_next = 0;
+        // open boundary conditions
+        if (x_next < 0) x_next = 0;
+        if (x_next >= nx) x_next = nx - 1;
+        if (y_next < 0) y_next = 0;
+        if (y_next >= ny) y_next = ny - 1;
+        if (z_next < 0) z_next = 0;
+        if (z_next >= nz) z_next = nz - 1;
 
         int idx_next = z_next * nx * ny + y_next * nx + x_next;
         g_new[7*idx + i] = g[7*idx_next + i];
@@ -258,17 +259,7 @@ __global__ void injectSmokeSourceKernel(float* f, float* g, float* rho, float* t
         curand_init(clock64(), idx + current_step, 0, &state);
         
         // Add smoke density with injection rate
-        float density_increase = injection_rate * (1.0f - dist / source_radius) * (0.8f + 0.2f * curand_uniform(&state));
-        // float density_increase = 0.1f;
-        rho[idx] = density_increase;
-
-        // if( x==center_x && y==center_y && z==center_z) {
-        //     printf("Injecting smoke source, (x, y, z): (%d, %d, %d), density_increase: %f, rho: %f\n", x, y, z, density_increase, rho[idx]);
-        // }
-
-        if(rho[idx] > 1.0f) {
-            rho[idx] = 1.0f;
-        }
+        rho[idx] = injection_rate * (1.0f - dist / source_radius) * (0.8f + 0.2f * curand_uniform(&state));
 
         // Update fluid distribution function
         for (int i = 0; i < 19; i++) {
@@ -276,12 +267,11 @@ __global__ void injectSmokeSourceKernel(float* f, float* g, float* rho, float* t
         }
         
         // Add temperature with injection rate
-        float temp_increase = injection_rate * (source_temperature - temperature[idx]) * (1.0f - dist / source_radius) * (0.8f + 0.4f * curand_uniform(&state));
-        temperature[idx] += temp_increase;
+        temperature[idx] = 300 + (source_temperature) * (1.0f - dist / source_radius) * (0.8f + 0.2f * curand_uniform(&state));
         
         // Update temperature distribution function
         for (int i = 0; i < 7; i++) {
-            g[7*idx + i] += w_t[i] * temp_increase;
+            g[7*idx + i] = w_t[i] * temperature[idx];
         }
     }
 }
@@ -529,12 +519,12 @@ void BoltzmannSolver::simulate(float dt, int steps) {
 
         // Fluid simulation steps
         collideFluid();
-        streamFluid();
-        updateMacroscopic();
-
-        // Temperature simulation steps
         collideTemperature();
+
+        streamFluid();
         streamTemperature();
+
+        updateMacroscopic();
         updateTemperature();
 
 
