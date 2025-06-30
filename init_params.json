@@ -1,8 +1,8 @@
 {
   "tau_f": 0.67,
-  "tau_t": 0.67,
+  "tau_t": 1.67,
   "temperature": 300.0,
-  "beta": 0.1,
+  "beta": 0.001,
   "buoyancy_rand_ratio": 0.8,
   "tau_rand_factor": 0.6,
   "source_injection_rate": 0.1,
@@ -17,7 +17,7 @@
   },
   "smoke_source": {
     "radius": 12.0,
-    "density": 1.1
+    "density": 4.0
   },
   "velocity_limit": 0.0577
 }

@@ -53,12 +53,13 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
 
     // Calculate buoyancy force based on temperature
     const float g = 9.81f;
-    const float rho_air = 10.5f;
+    const float rho_air = 1.225f;
     const float T_ref = 300.0f;
     float T_local = temperature[idx];
     float thermal_factor = (T_local - T_ref) / T_ref;
     float rand_factor = buoyancy_rand_ratio + (1.0f - buoyancy_rand_ratio) * curand_uniform(&state);
-    float buoyancy_force = -beta * g * (rho_local * (1.0f - thermal_factor) - rho_air) * rand_factor;
+    // float buoyancy_force = -beta * g * (rho_local * (1.0f - thermal_factor) - rho_air) * rand_factor;
+    float buoyancy_force = beta * g * (T_local - T_ref) * rand_factor;
     vel_local.y += buoyancy_force;
 
     // Limit velocity
@@ -80,8 +81,13 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
     }
 
     float tau = tau_f[idx] + tau_rand_factor * curand_uniform(&state);
+    float c_s2 = 1.0f / 3.0f;
+    float Fy = buoyancy_force; // y方向の外力
+
     for (int i = 0; i < 19; i++) {
-        f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]);
+        float ci_dot_u = c_dx[i] * vel_local.x + c_dy[i] * vel_local.y + c_dz[i] * vel_local.z;
+        float Fi = w[i] * ( (c_dy[i] - vel_local.y) / c_s2 + ci_dot_u * c_dy[i] / (c_s2 * c_s2)) * Fy;
+        f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]) + 0.0 *(1.0f - 0.5f / tau) * Fi;
     }
 }
 
@@ -97,13 +103,14 @@ __global__ void temperatureCollisionKernel(float* g, float* temperature, float* 
     float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
     float u_mag = sqrtf(u_sq);
     velocity_limit = velocity_limit * 1.0f;
-    // if (u_mag > velocity_limit) {
-    //     float scale = velocity_limit / u_mag;
-    //     vel_local.x *= scale;
-    //     vel_local.y *= scale;
-    //     vel_local.z *= scale;
-    //     u_sq = velocity_limit * velocity_limit;
-    // }
+
+    if (u_mag > velocity_limit) {
+        float scale = velocity_limit / u_mag;
+        vel_local.x *= scale;
+        vel_local.y *= scale;
+        vel_local.z *= scale;
+        u_sq = velocity_limit * velocity_limit;
+    }
 
     // Calculate equilibrium distribution for temperature field
     for (int i = 0; i < 7; i++) {
@@ -117,13 +124,7 @@ __global__ void temperatureCollisionKernel(float* g, float* temperature, float* 
 
     float tau = tau_t[idx];
     for (int i = 0; i < 7; i++) {
-        float g_tmp = g[7*idx + i];
         g[7*idx + i] = g[7*idx + i] - (1.0f/tau) * (g[7*idx + i] - g_eq[i]);
-
-        // if(g[7*idx + i] < 0.0f && found_negative_g == 0 && x == focused_point_x && y == focused_point_y && z == focused_point_z) {
-        //     found_negative_g = 1;
-        //     printf("Temperature Collision, (x, y, z): (%d, %d, %d), T_local: %f, g_eq[i]: %f, g_tmp: %f, g[7*idx + i]: %f\n", x, y, z, T_local, g_eq[i], g_tmp, g[7*idx + i]);
-        // }
     }
 }
 
@@ -221,6 +222,16 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
         vel_local.x /= rho_local;
         vel_local.y /= rho_local;
         vel_local.z /= rho_local;
+    }
+
+    float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
+    float u_mag = sqrtf(u_sq);
+
+    if (u_mag > 0.0577f) {
+        float scale = 0.0577f / u_mag;
+        vel_local.x *= scale;
+        vel_local.y *= scale;
+        vel_local.z *= scale;
     }
     
     // Save results
