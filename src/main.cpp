@@ -17,9 +17,9 @@ int main()
     try {
         // Grid size settings
         const int n_scale = 1;
-        const int nx = 128 * n_scale;
-        const int ny = 128 * n_scale * 2;
-        const int nz = 128 * n_scale;
+        const int nx = 64 * n_scale;
+        const int ny = 64 * n_scale * 2;
+        const int nz = 64 * n_scale;
         const int maxSteps = 100;
         const float dt = 0.1f;
 

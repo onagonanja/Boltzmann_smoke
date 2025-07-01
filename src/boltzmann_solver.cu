@@ -104,13 +104,13 @@ __global__ void temperatureCollisionKernel(float* g, float* temperature, float* 
     float u_mag = sqrtf(u_sq);
     velocity_limit = velocity_limit * 1.0f;
 
-    if (u_mag > velocity_limit) {
-        float scale = velocity_limit / u_mag;
-        vel_local.x *= scale;
-        vel_local.y *= scale;
-        vel_local.z *= scale;
-        u_sq = velocity_limit * velocity_limit;
-    }
+    // if (u_mag > velocity_limit) {
+    //     float scale = velocity_limit / u_mag;
+    //     vel_local.x *= scale;
+    //     vel_local.y *= scale;
+    //     vel_local.z *= scale;
+    //     u_sq = velocity_limit * velocity_limit;
+    // }
 
     // Calculate equilibrium distribution for temperature field
     for (int i = 0; i < 7; i++) {
@@ -128,7 +128,7 @@ __global__ void temperatureCollisionKernel(float* g, float* temperature, float* 
     }
 }
 
-// Temperature field streaming step
+// Temperature field streaming step with adiabatic boundary conditions
 __global__ void temperatureStreamingKernel(float* g, float* g_new, int nx, int ny, int nz) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -142,16 +142,97 @@ __global__ void temperatureStreamingKernel(float* g, float* g_new, int nx, int n
         int y_next = y + c_t_dy[i];
         int z_next = z + c_t_dz[i];
 
-        // open boundary conditions
-        if (x_next < 0) x_next = 0;
-        if (x_next >= nx) x_next = nx - 1;
-        if (y_next < 0) y_next = 0;
-        if (y_next >= ny) y_next = ny - 1;
-        if (z_next < 0) z_next = 0;
-        if (z_next >= nz) z_next = nz - 1;
-
-        int idx_next = z_next * nx * ny + y_next * nx + x_next;
-        g_new[7*idx + i] = g[7*idx_next + i];
+        // Adiabatic boundary conditions (zero temperature gradient at boundaries)
+        if (x_next < 0) {
+            // Left boundary: reflect the distribution function
+            // Find the opposite direction for reflection
+            int reflected_i = -1;
+            for (int j = 0; j < 7; j++) {
+                if (c_t_dx[j] == -c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
+                    reflected_i = j;
+                    break;
+                }
+            }
+            if (reflected_i >= 0) {
+                g_new[7*idx + i] = g[7*idx + reflected_i];
+            } else {
+                g_new[7*idx + i] = g[7*idx + i];
+            }
+        } else if (x_next >= nx) {
+            // Right boundary: reflect the distribution function
+            int reflected_i = -1;
+            for (int j = 0; j < 7; j++) {
+                if (c_t_dx[j] == -c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
+                    reflected_i = j;
+                    break;
+                }
+            }
+            if (reflected_i >= 0) {
+                g_new[7*idx + i] = g[7*idx + reflected_i];
+            } else {
+                g_new[7*idx + i] = g[7*idx + i];
+            }
+        } else if (y_next < 0) {
+            // Bottom boundary: reflect the distribution function
+            int reflected_i = -1;
+            for (int j = 0; j < 7; j++) {
+                if (c_t_dx[j] == c_t_dx[i] && c_t_dy[j] == -c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
+                    reflected_i = j;
+                    break;
+                }
+            }
+            if (reflected_i >= 0) {
+                g_new[7*idx + i] = g[7*idx + reflected_i];
+            } else {
+                g_new[7*idx + i] = g[7*idx + i];
+            }
+        } else if (y_next >= ny) {
+            // Top boundary: reflect the distribution function
+            int reflected_i = -1;
+            for (int j = 0; j < 7; j++) {
+                if (c_t_dx[j] == c_t_dx[i] && c_t_dy[j] == -c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
+                    reflected_i = j;
+                    break;
+                }
+            }
+            if (reflected_i >= 0) {
+                g_new[7*idx + i] = g[7*idx + reflected_i];
+            } else {
+                g_new[7*idx + i] = g[7*idx + i];
+            }
+        } else if (z_next < 0) {
+            // Front boundary: reflect the distribution function
+            int reflected_i = -1;
+            for (int j = 0; j < 7; j++) {
+                if (c_t_dx[j] == c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == -c_t_dz[i]) {
+                    reflected_i = j;
+                    break;
+                }
+            }
+            if (reflected_i >= 0) {
+                g_new[7*idx + i] = g[7*idx + reflected_i];
+            } else {
+                g_new[7*idx + i] = g[7*idx + i];
+            }
+        } else if (z_next >= nz) {
+            // Back boundary: reflect the distribution function
+            int reflected_i = -1;
+            for (int j = 0; j < 7; j++) {
+                if (c_t_dx[j] == c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == -c_t_dz[i]) {
+                    reflected_i = j;
+                    break;
+                }
+            }
+            if (reflected_i >= 0) {
+                g_new[7*idx + i] = g[7*idx + reflected_i];
+            } else {
+                g_new[7*idx + i] = g[7*idx + i];
+            }
+        } else {
+            // Interior points: normal streaming
+            int idx_next = z_next * nx * ny + y_next * nx + x_next;
+            g_new[7*idx + i] = g[7*idx_next + i];
+        }
     }
 }
 
