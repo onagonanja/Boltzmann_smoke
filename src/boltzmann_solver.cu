@@ -53,12 +53,9 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
 
     // Calculate buoyancy force based on temperature
     const float g = 9.81f;
-    const float rho_air = 1.225f;
     const float T_ref = 300.0f;
     float T_local = temperature[idx];
-    float thermal_factor = (T_local - T_ref) / T_ref;
     float rand_factor = buoyancy_rand_ratio + (1.0f - buoyancy_rand_ratio) * curand_uniform(&state);
-    // float buoyancy_force = -beta * g * (rho_local * (1.0f - thermal_factor) - rho_air) * rand_factor;
     float buoyancy_force = beta * g * (T_local - T_ref) * rand_factor;
     vel_local.y += buoyancy_force;
 
@@ -76,7 +73,6 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
     // Calculate equilibrium distribution
     for (int i = 0; i < 19; i++) {
         float ci_dot_u = c_dx[i] * vel_local.x + c_dy[i] * vel_local.y + c_dz[i] * vel_local.z;
-        float f_eq_temp = 1.0f + 3.0f * ci_dot_u + 4.5f * ci_dot_u * ci_dot_u - 1.5f * u_sq;
         f_eq[i] = w[i] * rho_local * (1.0f + 3.0f * ci_dot_u + 4.5f * ci_dot_u * ci_dot_u - 1.5f * u_sq);
     }
 
@@ -104,23 +100,11 @@ __global__ void temperatureCollisionKernel(float* g, float* temperature, float* 
     float u_mag = sqrtf(u_sq);
     velocity_limit = velocity_limit * 1.0f;
 
-    // if (u_mag > velocity_limit) {
-    //     float scale = velocity_limit / u_mag;
-    //     vel_local.x *= scale;
-    //     vel_local.y *= scale;
-    //     vel_local.z *= scale;
-    //     u_sq = velocity_limit * velocity_limit;
-    // }
-
     // Calculate equilibrium distribution for temperature field
     for (int i = 0; i < 7; i++) {
         float ci_dot_u = c_t_dx[i] * vel_local.x + c_t_dy[i] * vel_local.y + c_t_dz[i] * vel_local.z;
         g_eq[i] = w_t[i] * T_local * (1.0f + 3.0f * ci_dot_u);
     }
-
-    int x = idx % nx;
-    int y = (idx % (nx * ny)) / nx;
-    int z = idx / (nx * ny);
 
     float tau = tau_t[idx];
     for (int i = 0; i < 7; i++) {
@@ -145,7 +129,6 @@ __global__ void temperatureStreamingKernel(float* g, float* g_new, int nx, int n
         // Adiabatic boundary conditions (zero temperature gradient at boundaries)
         if (x_next < 0) {
             // Left boundary: reflect the distribution function
-            // Find the opposite direction for reflection
             int reflected_i = -1;
             for (int j = 0; j < 7; j++) {
                 if (c_t_dx[j] == -c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
@@ -351,7 +334,7 @@ __global__ void injectSmokeSourceKernel(float* f, float* g, float* rho, float* t
         curand_init(clock64(), idx + current_step, 0, &state);
         
         // Add smoke density with injection rate
-        rho[idx] = injection_rate * (1.0f - dist / source_radius) * (0.8f + 0.2f * curand_uniform(&state));
+        rho[idx] = injection_rate * (0.8f + 0.2f * curand_uniform(&state));
 
         // Update fluid distribution function
         for (int i = 0; i < 19; i++) {
@@ -417,48 +400,6 @@ void BoltzmannSolver::initializeFields() {
     std::vector<float> initial_tau_f(grid_size, init_params_.tau_f);
     std::vector<float> initial_tau_t(grid_size, init_params_.tau_t);
     std::vector<float> initial_temperature(grid_size, init_params_.temperature);
-
-    // Set initial density
-    int center_x = nx_ / 2;
-    int center_y = ny_ / 8;
-    int center_z = nz_ / 2;
-    float source_radius = init_params_.source_radius;
-    float source_density = init_params_.source_density;
-    
-    // for (int z = 0; z < nz_; z++) {
-    //     for (int y = 0; y < ny_; y++) {
-    //         for (int x = 0; x < nx_; x++) {
-    //             float dx = x - center_x;
-    //             float dy = y - center_y;
-    //             float dz = z - center_z;
-    //             float dist = sqrtf(dx*dx + dy*dy + dz*dz);
-    //             int idx = z * nx_ * ny_ + y * nx_ + x;
-
-    //             if (dist < source_radius) {
-    //                 initial_density[idx] = source_density;
-    //                 for (int i = 0; i < 19; i++) {
-    //                     initial_f_distribution[19 * idx + i] = w[i] * initial_density[idx];
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-
-    // // Set high temperature region at the bottom
-    // int bottom_height = ny_ / 4;
-    // for (int z = 0; z < nz_; z++) {
-    //     for (int y = 0; y < bottom_height; y++) {
-    //         for (int x = 0; x < nx_; x++) {
-    //             int idx = z * nx_ * ny_ + y * nx_ + x;
-    //             float height_factor = 1.0f - (float)y / bottom_height;
-    //             initial_temperature[idx] = init_params_.temperature + 200.0f * height_factor;
-    //             // Set initial temperature distribution function
-    //             for (int i = 0; i < 7; i++) {
-    //                 initial_g_distribution[7*idx + i] = w_t[i] * initial_temperature[idx];
-    //             }
-    //         }
-    //     }
-    // }
 
     cudaMemcpy(d_f_distribution, initial_f_distribution.data(), grid_size * 19 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_g_distribution, initial_g_distribution.data(), grid_size * 7 * sizeof(float), cudaMemcpyHostToDevice);
