@@ -83,7 +83,7 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
     for (int i = 0; i < 19; i++) {
         float ci_dot_u = c_dx[i] * vel_local.x + c_dy[i] * vel_local.y + c_dz[i] * vel_local.z;
         float Fi = w[i] * ( (c_dy[i] - vel_local.y) / c_s2 + ci_dot_u * c_dy[i] / (c_s2 * c_s2)) * Fy;
-        f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]) + 0.0 *(1.0f - 0.5f / tau) * Fi;
+        f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]) + 0.001f *(1.0f - 0.5f / tau) * Fi;
     }
 }
 

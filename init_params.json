@@ -1,6 +1,6 @@
 {
   "tau_f": 0.67,
-  "tau_t": 1.17,
+  "tau_t": 1.07,
   "temperature": 300.0,
   "beta": 0.01,
   "buoyancy_rand_ratio": 0.5,
