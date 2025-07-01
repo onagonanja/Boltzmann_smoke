@@ -20,6 +20,15 @@ public:
         float source_radius = 6.0f;
         float source_density = 0.5f;
         float velocity_limit = 0.3f;
+        float beta = 0.1f;  // Thermal expansion coefficient
+        float buoyancy_rand_ratio = 0.8f;  // Buoyancy force randomization ratio
+        float tau_rand_factor = 0.2f;  // Relaxation time randomization factor
+        float source_injection_rate = 0.1f;  // Continuous smoke injection rate
+        float source_temperature = 500.0f;  // Source temperature
+        bool continuous_source = true;  // Enable continuous smoke source
+        int source_injection_interval = 10;  // Interval between smoke injections
+        int simulation_steps_per_frame = 30;  // Number of simulation steps per frame
+        bool show_temperature_field = true;  // Show temperature field in visualizer
         // Add more parameters as needed
     };
 
@@ -89,6 +98,9 @@ private:
     void streamTemperature();
     void collideTemperature();
     void updateTemperature();
+    
+    // Continuous smoke source injection
+    void injectSmokeSource();
     
     void copyToHost();  // Data copy from GPU to CPU
 };

@@ -17,9 +17,9 @@ int main()
     try {
         // Grid size settings
         const int n_scale = 1;
-        const int nx = 128 * n_scale;
-        const int ny = 128 * n_scale * 2;
-        const int nz = 128 * n_scale;
+        const int nx = 64 * n_scale;
+        const int ny = 64 * n_scale * 2;
+        const int nz = 64 * n_scale;
         const int maxSteps = 100;
         const float dt = 0.1f;
 
@@ -41,6 +41,15 @@ int main()
             init_params.tau_f = j.value("tau_f", 1.3f);
             init_params.tau_t = j.value("tau_t", 0.8f);
             init_params.temperature = j.value("temperature", 300.0f);
+            init_params.beta = j.value("beta", 0.1f);
+            init_params.buoyancy_rand_ratio = j.value("buoyancy_rand_ratio", 0.8f);
+            init_params.tau_rand_factor = j.value("tau_rand_factor", 0.2f);
+            init_params.source_injection_rate = j.value("source_injection_rate", 0.1f);
+            init_params.source_temperature = j.value("source_temperature", 500.0f);
+            init_params.continuous_source = j.value("continuous_source", true);
+            init_params.source_injection_interval = j.value("source_injection_interval", 10);
+            init_params.simulation_steps_per_frame = j.value("simulation_steps_per_frame", 30);
+            init_params.show_temperature_field = j.value("show_temperature_field", true);
             
             // Load wind parameters
             if (j.contains("wind")) {
@@ -68,9 +77,13 @@ int main()
 
             Visualizer visualizer(800, 600);
             int currentFrame = 0;
+            
+            // Create dummy temperature data for replay (since recorder only stores density)
+            std::vector<float> dummy_temperature(nx * ny * nz, 300.0f);
+            
             while (!visualizer.shouldClose()) {
                 const auto& frame = recorder.getFrame(currentFrame);
-                visualizer.update(frame.data(), nx, ny, nz);
+                visualizer.update(frame.data(), dummy_temperature.data(), nx, ny, nz, init_params.show_temperature_field);
                 currentFrame = (currentFrame + 1) % recorder.getFrameCount();
                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
             }
@@ -91,10 +104,10 @@ int main()
             
             for (int step = 0; step < maxSteps && !visualizer.shouldClose(); ++step) {
                 // Update visualizer
-                visualizer.update(solver.getDensityData(), nx, ny, nz);
+                visualizer.update(solver.getDensityData(), solver.getTemperatureData(), nx, ny, nz, init_params.show_temperature_field);
                 
                 // Update simulation
-                solver.simulate(dt, 30);
+                solver.simulate(dt, init_params.simulation_steps_per_frame);
                 
                 // Output to OpenVDB file
                 if (saveSimulation && step % 1 == 0) {  // Save every 1 step

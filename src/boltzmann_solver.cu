@@ -31,13 +31,15 @@ __device__ __constant__ float c_t_dz[7] = {0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  1.
 __device__ __constant__ float w_t[7] = {1.0f/4.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.0f};
 
 __device__ int found_negative_f = 0;
+__device__ int found_negative_g = 0;
+
 __constant__ int focused_point_x = 64;
 __constant__ int focused_point_y = 32;
 __constant__ int focused_point_z = 49;
 
 
 // Fluid collision step
-__global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* vel_y, float* vel_z, float* tau_f, float* temperature, int nx, int ny, int nz, int current_step, float velocity_limit) {
+__global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* vel_y, float* vel_z, float* tau_f, float* temperature, int nx, int ny, int nz, int current_step, float velocity_limit, float beta, float buoyancy_rand_ratio, float tau_rand_factor) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= nx * ny * nz) return;
 
@@ -51,18 +53,11 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
 
     // Calculate buoyancy force based on temperature
     const float g = 9.81f;
-    const float rho_air = 10.5f;
-    const float beta = 0.1f;
     const float T_ref = 300.0f;
     float T_local = temperature[idx];
-    float thermal_factor = (T_local - T_ref) / T_ref;
-    float rand_factor = 0.9f + 0.1f * curand_uniform(&state);
-    float buoyancy_force = -beta * g * (rho_local * (1.0f - thermal_factor) - rho_air) * rand_factor;
+    float rand_factor = buoyancy_rand_ratio + (1.0f - buoyancy_rand_ratio) * curand_uniform(&state);
+    float buoyancy_force = beta * g * (T_local - T_ref) * rand_factor;
     vel_local.y += buoyancy_force;
-
-    int x = idx % nx;
-    int y = (idx % (nx * ny)) / nx;
-    int z = idx / (nx * ny);
 
     // Limit velocity
     float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
@@ -78,33 +73,32 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
     // Calculate equilibrium distribution
     for (int i = 0; i < 19; i++) {
         float ci_dot_u = c_dx[i] * vel_local.x + c_dy[i] * vel_local.y + c_dz[i] * vel_local.z;
-        float f_eq_temp = 1.0f + 3.0f * ci_dot_u + 4.5f * ci_dot_u * ci_dot_u - 1.5f * u_sq;
         f_eq[i] = w[i] * rho_local * (1.0f + 3.0f * ci_dot_u + 4.5f * ci_dot_u * ci_dot_u - 1.5f * u_sq);
     }
 
-    float tau_rand = 0.1f * curand_uniform(&state);
-    float tau = tau_f[idx] + tau_rand; 
+    float tau = tau_f[idx] + tau_rand_factor * curand_uniform(&state);
+    float c_s2 = 1.0f / 3.0f;
+    float Fy = buoyancy_force; // y方向の外力
+
     for (int i = 0; i < 19; i++) {
-        float f_tmp = f[19*idx + i];
-        f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]);
-        
-        // if(f[19*idx + i] < 0.0f && found_negative_f == 0 && x == focused_point_x && y == focused_point_y && z == focused_point_z) {
-        //     found_negative_f = 1;
-        //     printf("Step: %d, Collision, (x, y, z): (%d, %d, %d), rho_local: %f, f_eq[i]: %f, f_tmp: %f, f[19*idx + i]: %f\n", current_step, x, y, z, rho_local, f_eq[i], f_tmp, f[19*idx + i]);
-        // }else if(x == focused_point_x && y == focused_point_y && z == focused_point_z && current_step == 1) {
-        //     printf("Step: %d, Collision, (x, y, z): (%d, %d, %d), f[19*idx + i]: %f\n", current_step, x, y, z, f[19*idx + i]);
-        // }
+        float ci_dot_u = c_dx[i] * vel_local.x + c_dy[i] * vel_local.y + c_dz[i] * vel_local.z;
+        float Fi = w[i] * ( (c_dy[i] - vel_local.y) / c_s2 + ci_dot_u * c_dy[i] / (c_s2 * c_s2)) * Fy;
+        f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]) + 0.0 *(1.0f - 0.5f / tau) * Fi;
     }
 }
 
 // Temperature field collision step
-__global__ void temperatureCollisionKernel(float* g, float* temperature, float* vel_x, float* vel_y, float* vel_z, float* tau_t, int nx, int ny, int nz) {
+__global__ void temperatureCollisionKernel(float* g, float* temperature, float* vel_x, float* vel_y, float* vel_z, float* tau_t, int nx, int ny, int nz, float velocity_limit) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= nx * ny * nz) return;
 
     float g_eq[7];
     float T_local = temperature[idx];
     float3 vel_local = make_float3(vel_x[idx], vel_y[idx], vel_z[idx]);
+
+    float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
+    float u_mag = sqrtf(u_sq);
+    velocity_limit = velocity_limit * 1.0f;
 
     // Calculate equilibrium distribution for temperature field
     for (int i = 0; i < 7; i++) {
@@ -118,7 +112,7 @@ __global__ void temperatureCollisionKernel(float* g, float* temperature, float* 
     }
 }
 
-// Temperature field streaming step
+// Temperature field streaming step with adiabatic boundary conditions
 __global__ void temperatureStreamingKernel(float* g, float* g_new, int nx, int ny, int nz) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -132,16 +126,96 @@ __global__ void temperatureStreamingKernel(float* g, float* g_new, int nx, int n
         int y_next = y + c_t_dy[i];
         int z_next = z + c_t_dz[i];
 
-        // Periodic boundary conditions
-        if (x_next < 0) x_next = nx - 1;
-        if (x_next >= nx) x_next = 0;
-        if (y_next < 0) y_next = ny - 1;
-        if (y_next >= ny) y_next = 0;
-        if (z_next < 0) z_next = nz - 1;
-        if (z_next >= nz) z_next = 0;
-
-        int idx_next = z_next * nx * ny + y_next * nx + x_next;
-        g_new[7*idx + i] = g[7*idx_next + i];
+        // Adiabatic boundary conditions (zero temperature gradient at boundaries)
+        if (x_next < 0) {
+            // Left boundary: reflect the distribution function
+            int reflected_i = -1;
+            for (int j = 0; j < 7; j++) {
+                if (c_t_dx[j] == -c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
+                    reflected_i = j;
+                    break;
+                }
+            }
+            if (reflected_i >= 0) {
+                g_new[7*idx + i] = g[7*idx + reflected_i];
+            } else {
+                g_new[7*idx + i] = g[7*idx + i];
+            }
+        } else if (x_next >= nx) {
+            // Right boundary: reflect the distribution function
+            int reflected_i = -1;
+            for (int j = 0; j < 7; j++) {
+                if (c_t_dx[j] == -c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
+                    reflected_i = j;
+                    break;
+                }
+            }
+            if (reflected_i >= 0) {
+                g_new[7*idx + i] = g[7*idx + reflected_i];
+            } else {
+                g_new[7*idx + i] = g[7*idx + i];
+            }
+        } else if (y_next < 0) {
+            // Bottom boundary: reflect the distribution function
+            int reflected_i = -1;
+            for (int j = 0; j < 7; j++) {
+                if (c_t_dx[j] == c_t_dx[i] && c_t_dy[j] == -c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
+                    reflected_i = j;
+                    break;
+                }
+            }
+            if (reflected_i >= 0) {
+                g_new[7*idx + i] = g[7*idx + reflected_i];
+            } else {
+                g_new[7*idx + i] = g[7*idx + i];
+            }
+        } else if (y_next >= ny) {
+            // Top boundary: reflect the distribution function
+            int reflected_i = -1;
+            for (int j = 0; j < 7; j++) {
+                if (c_t_dx[j] == c_t_dx[i] && c_t_dy[j] == -c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
+                    reflected_i = j;
+                    break;
+                }
+            }
+            if (reflected_i >= 0) {
+                g_new[7*idx + i] = g[7*idx + reflected_i];
+            } else {
+                g_new[7*idx + i] = g[7*idx + i];
+            }
+        } else if (z_next < 0) {
+            // Front boundary: reflect the distribution function
+            int reflected_i = -1;
+            for (int j = 0; j < 7; j++) {
+                if (c_t_dx[j] == c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == -c_t_dz[i]) {
+                    reflected_i = j;
+                    break;
+                }
+            }
+            if (reflected_i >= 0) {
+                g_new[7*idx + i] = g[7*idx + reflected_i];
+            } else {
+                g_new[7*idx + i] = g[7*idx + i];
+            }
+        } else if (z_next >= nz) {
+            // Back boundary: reflect the distribution function
+            int reflected_i = -1;
+            for (int j = 0; j < 7; j++) {
+                if (c_t_dx[j] == c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == -c_t_dz[i]) {
+                    reflected_i = j;
+                    break;
+                }
+            }
+            if (reflected_i >= 0) {
+                g_new[7*idx + i] = g[7*idx + reflected_i];
+            } else {
+                g_new[7*idx + i] = g[7*idx + i];
+            }
+        } else {
+            // Interior points: normal streaming
+            int idx_next = z_next * nx * ny + y_next * nx + x_next;
+            g_new[7*idx + i] = g[7*idx_next + i];
+        }
     }
 }
 
@@ -196,7 +270,6 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
     
     int idx = z * nx * ny + y * nx + x;
     
-    // Calculate density and velocity
     float rho_local = 0.0f;
     float3 vel_local = make_float3(0.0f, 0.0f, 0.0f);
     
@@ -206,10 +279,6 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
         vel_local.x += c_dx[i] * fi;
         vel_local.y += c_dy[i] * fi;
         vel_local.z += c_dz[i] * fi;
-
-        // if(x == focused_point_x && y == focused_point_y && z == focused_point_z && found_negative_f == 0) {
-        //     printf("Macroscopic, (x, y, z): (%d, %d, %d), f[19*idx + i]: %f\n", x, y, z, fi);
-        // }
     }
     
     // Normalize velocity
@@ -218,16 +287,68 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
         vel_local.y /= rho_local;
         vel_local.z /= rho_local;
     }
+
+    float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
+    float u_mag = sqrtf(u_sq);
+
+    if (u_mag > 0.0577f) {
+        float scale = 0.0577f / u_mag;
+        vel_local.x *= scale;
+        vel_local.y *= scale;
+        vel_local.z *= scale;
+    }
     
     // Save results
     rho[idx] = rho_local;
     vel_x[idx] = vel_local.x;
     vel_y[idx] = vel_local.y;
     vel_z[idx] = vel_local.z;
+}
 
-    // if(x == focused_point_x && y == focused_point_y && z == focused_point_z && found_negative_f == 0) {
-    //     printf("Macroscopic, (x, y, z): (%d, %d, %d), rho_local: %f, vel_local: (%f, %f, %f)\n", x, y, z, rho_local, vel_local.x, vel_local.y, vel_local.z);
-    // }
+// Continuous smoke source injection kernel
+__global__ void injectSmokeSourceKernel(float* f, float* g, float* rho, float* temperature, int nx, int ny, int nz, 
+                                       float source_radius, float source_density, float source_temperature, 
+                                       float injection_rate, int current_step) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int z = blockIdx.z * blockDim.z + threadIdx.z;
+    
+    if (x >= nx || y >= ny || z >= nz) return;
+    
+    int idx = z * nx * ny + y * nx + x;
+    
+    // Calculate distance from source center
+    int center_x = nx / 2;
+    int center_y = ny / 8;
+    int center_z = nz / 2;
+    
+    float dx = x - center_x;
+    float dy = y - center_y;
+    float dz = z - center_z;
+    float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+    
+    // Check if point is within source radius
+    if (dist < source_radius) {
+        // Initialize random number generator
+        curandState state;
+        curand_init(clock64(), idx + current_step, 0, &state);
+        
+        // Add smoke density with injection rate
+        rho[idx] = injection_rate * (0.8f + 0.2f * curand_uniform(&state));
+
+        // Update fluid distribution function
+        for (int i = 0; i < 19; i++) {
+            f[19*idx + i] = w[i] * rho[idx];
+        }
+        
+        // Add temperature with injection rate
+        temperature[idx] = 300 + (source_temperature) * (1.0f - dist / source_radius) * (0.8f + 0.2f * curand_uniform(&state));
+        
+        // Update temperature distribution function
+        for (int i = 0; i < 7; i++) {
+            g[7*idx + i] = w_t[i] * temperature[idx];
+        }
+    }
 }
 
 BoltzmannSolver::BoltzmannSolver(int nx, int ny, int nz, const InitParams& params)
@@ -279,48 +400,6 @@ void BoltzmannSolver::initializeFields() {
     std::vector<float> initial_tau_f(grid_size, init_params_.tau_f);
     std::vector<float> initial_tau_t(grid_size, init_params_.tau_t);
     std::vector<float> initial_temperature(grid_size, init_params_.temperature);
-
-    // Set initial density
-    int center_x = nx_ / 2;
-    int center_y = ny_ / 8;
-    int center_z = nz_ / 2;
-    float source_radius = init_params_.source_radius;
-    float source_density = init_params_.source_density;
-    
-    for (int z = 0; z < nz_; z++) {
-        for (int y = 0; y < ny_; y++) {
-            for (int x = 0; x < nx_; x++) {
-                float dx = x - center_x;
-                float dy = y - center_y;
-                float dz = z - center_z;
-                float dist = sqrtf(dx*dx + dy*dy + dz*dz);
-                int idx = z * nx_ * ny_ + y * nx_ + x;
-
-                if (dist < source_radius) {
-                    initial_density[idx] = source_density;
-                    for (int i = 0; i < 19; i++) {
-                        initial_f_distribution[19 * idx + i] = w[i] * initial_density[idx];
-                    }
-                }
-            }
-        }
-    }
-
-    // Set high temperature region at the bottom
-    int bottom_height = ny_ / 4;
-    for (int z = 0; z < nz_; z++) {
-        for (int y = 0; y < bottom_height; y++) {
-            for (int x = 0; x < nx_; x++) {
-                int idx = z * nx_ * ny_ + y * nx_ + x;
-                float height_factor = 1.0f - (float)y / bottom_height;
-                initial_temperature[idx] = init_params_.temperature + 200.0f * height_factor;
-                // Set initial temperature distribution function
-                for (int i = 0; i < 7; i++) {
-                    initial_g_distribution[7*idx + i] = w_t[i] * initial_temperature[idx];
-                }
-            }
-        }
-    }
 
     cudaMemcpy(d_f_distribution, initial_f_distribution.data(), grid_size * 19 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_g_distribution, initial_g_distribution.data(), grid_size * 7 * sizeof(float), cudaMemcpyHostToDevice);
@@ -380,7 +459,7 @@ void BoltzmannSolver::collideFluid() {
     int grid_size = nx_ * ny_ * nz_;
     int block_size = 256;
     int num_blocks = (grid_size + block_size - 1) / block_size;
-    fluidCollisionKernel<<<num_blocks, block_size>>>(d_f_distribution, d_density, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_f, d_temperature, nx_, ny_, nz_, current_step_, init_params_.velocity_limit);
+    fluidCollisionKernel<<<num_blocks, block_size>>>(d_f_distribution, d_density, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_f, d_temperature, nx_, ny_, nz_, current_step_, init_params_.velocity_limit, init_params_.beta, init_params_.buoyancy_rand_ratio, init_params_.tau_rand_factor);
     cudaDeviceSynchronize();
 }
 
@@ -388,7 +467,7 @@ void BoltzmannSolver::collideTemperature() {
     int grid_size = nx_ * ny_ * nz_;
     int block_size = 256;
     int num_blocks = (grid_size + block_size - 1) / block_size;
-    temperatureCollisionKernel<<<num_blocks, block_size>>>(d_g_distribution, d_temperature, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_t, nx_, ny_, nz_);
+    temperatureCollisionKernel<<<num_blocks, block_size>>>(d_g_distribution, d_temperature, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_t, nx_, ny_, nz_, init_params_.velocity_limit);
     cudaDeviceSynchronize();
 }
 
@@ -397,6 +476,19 @@ void BoltzmannSolver::updateTemperature() {
     int block_size = 256;
     int num_blocks = (grid_size + block_size - 1) / block_size;
     updateTemperatureKernel<<<num_blocks, block_size>>>(d_g_distribution, d_temperature, nx_, ny_, nz_);
+    cudaDeviceSynchronize();
+}
+
+void BoltzmannSolver::injectSmokeSource() {
+    
+    dim3 block(8, 8, 8);
+    dim3 grid((nx_ + block.x - 1) / block.x,
+              (ny_ + block.y - 1) / block.y,
+              (nz_ + block.z - 1) / block.z);
+
+    injectSmokeSourceKernel<<<grid, block>>>(d_f_distribution, d_g_distribution, d_density, d_temperature,
+                                            nx_, ny_, nz_, init_params_.source_radius, init_params_.source_density,
+                                            init_params_.source_temperature, init_params_.source_injection_rate, current_step_);
     cudaDeviceSynchronize();
 }
 
@@ -455,20 +547,23 @@ void BoltzmannSolver::simulate(float dt, int steps) {
     float period = 30.0f;
     float omega = 2.0f * 3.14159265358979323846f / period;
     for (int step = 0; step < steps; ++step) {
-        current_step_++;
-
         cudaMemcpy(d_density, h_density, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyHostToDevice);
         cudaMemcpy(d_temperature, h_temperature, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyHostToDevice);
 
         // Fluid simulation steps
         collideFluid();
-        streamFluid();
-        updateMacroscopic();
-
-        // Temperature simulation steps
         collideTemperature();
+
+        streamFluid();
         streamTemperature();
+
+        updateMacroscopic();
         updateTemperature();
+
+
+        if(init_params_.continuous_source && current_step_ % init_params_.source_injection_interval == 0) {
+            injectSmokeSource();
+        }
 
         copyToHost();
 
@@ -482,6 +577,8 @@ void BoltzmannSolver::simulate(float dt, int steps) {
                   << " | Avg velocity: " << getAverageVelocity()
                   << " | Max velocity: " << getMaxVelocity()
                   << std::flush;
+
+        current_step_++;
     }
 }
 
