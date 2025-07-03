@@ -342,7 +342,7 @@ __global__ void injectSmokeSourceKernel(float* f, float* g, float* rho, float* t
         }
         
         // Add temperature with injection rate
-        temperature[idx] = 300 + (source_temperature) * (1.0f - dist / source_radius) * (0.8f + 0.2f * curand_uniform(&state));
+        temperature[idx] = 300 + (source_temperature) * (0.8f + 0.2f * curand_uniform(&state));
         
         // Update temperature distribution function
         for (int i = 0; i < 7; i++) {

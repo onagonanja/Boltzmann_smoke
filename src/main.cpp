@@ -20,9 +20,8 @@ int main()
         const int nx = 64 * n_scale;
         const int ny = 64 * n_scale * 2;
         const int nz = 64 * n_scale;
-        const int maxSteps = 100;
+        const int maxSteps = 300;
         const float dt = 0.1f;
-
         
         // Whether to save simulation results
         bool saveSimulation = true;

@@ -9,7 +9,7 @@
 Visualizer::Visualizer(int width, int height)
     : window_width(width * 2), window_height(height), window(nullptr), 
       densityShaderProgram(0), temperatureShaderProgram(0),
-      camera_pos(0.0f, -2.0f, 20.0f), camera_front(0.0f, 0.0f, -1.0f), camera_up(0.0f, 1.0f, 0.0f),
+      camera_pos(0.0f, 3.0f, 30.0f), camera_front(0.0f, 0.0f, -1.0f), camera_up(0.0f, 1.0f, 0.0f),
       yaw(-90.0f), pitch(0.0f), last_x(width / 2.0f), last_y(height / 2.0f), first_mouse(true)
 {
     if (!glfwInit()) {
