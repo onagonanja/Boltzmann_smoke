@@ -33,9 +33,9 @@ __device__ __constant__ float w_t[7] = {1.0f/4.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.
 __device__ int found_negative_f = 0;
 __device__ int found_negative_g = 0;
 
-__constant__ int focused_point_x = 64;
-__constant__ int focused_point_y = 32;
-__constant__ int focused_point_z = 49;
+__constant__ int focused_point_x = 0;
+__constant__ int focused_point_y = 127;
+__constant__ int focused_point_z = 0;
 
 
 // Fluid collision step

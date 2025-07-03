@@ -4,29 +4,11 @@
 #include <iostream>
 
 void BoltzmannSolver::initialize() {
-    // 初期状態の設定（煙の発生源）
-    // for (int z = 0; z < nz_; z++) {
-    //     for (int y = 0; y < ny_; y++) {
-    //         for (int x = 0; x < nx_; x++) {
-    //             // 中心付近に煙を配置
-    //             float dx = x - nx_/2;
-    //             float dy = y - ny_/2;
-    //             float dz = z - nz_/2;
-    //             float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-    //             if (dist < 10.0f) {
-    //                 h_density[z * nx_ * ny_ + y * nx_ + x] = 2.0f;
-    //             }
-    //         }
-    //     }
-    // }
-    // GPUメモリにコピー
     cudaMemcpy(d_density, h_density, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyHostToDevice);
 }
 
 void BoltzmannSolver::exportToVDB(const char* filename, VDBExporter* exporter) {
-    // GPUからCPUへデータをコピー
     copyToHost();
-    // OpenVDBファイルに出力
     if (exporter) {
         exporter->exportToVDB(filename, h_rho_.data(), h_vel_.data());
     }

@@ -1,6 +1,10 @@
 ﻿#include "vdb_exporter.hpp"
 #include <iostream>
 
+int focused_point_x = 0;
+int focused_point_y = 127;
+int focused_point_z = 0;
+
 VDBExporter::VDBExporter(int nx, int ny, int nz)
     : nx_(nx), ny_(ny), nz_(nz) {
     initializeGrids();
@@ -36,17 +40,17 @@ void VDBExporter::updateGrids(const float* density, const float* velocity) {
         for (int y = 0; y < ny_; ++y) {
             for (int x = 0; x < nx_; ++x) {
                 int idx = z * nx_ * ny_ + y * nx_ + x;
-                openvdb::Coord coord(x, z, y);
-                
-                // Update density (increase scale for better visibility)
+                openvdb::Coord coord(x, z, y);                
                 float scaled_density = density[idx] * 10.0f; 
+                               
                 if (scaled_density > 0.001f) {
                     density_accessor.setValue(coord, scaled_density);
                     active_voxels++;
                     max_density = std::max(max_density, scaled_density);
+                }else{
+                    density_accessor.setValue(coord, 0.0f);
                 }
                 
-                // Update velocity
                 openvdb::Vec3f vel(
                     velocity[3*idx],
                     velocity[3*idx + 2],
@@ -54,16 +58,12 @@ void VDBExporter::updateGrids(const float* density, const float* velocity) {
                  );
                 if (scaled_density > 0.001f) {
                     velocity_accessor.setValue(coord, vel);
+                } else {
+                    velocity_accessor.setValue(coord, openvdb::Vec3f(0.0f));
                 }
             }
         }
     }
-    
-    // Output debug information
-    // std::cout << "VDB output debug information:" << std::endl;
-    // std::cout << "Active voxels: " << active_voxels << std::endl;
-    // std::cout << "Max density: " << max_density << std::endl;
-    // std::cout << "Grid size: " << nx_ << "x" << ny_ << "x" << nz_ << std::endl;
 }
 
 void VDBExporter::exportToVDB(const char* filename, const float* density, const float* velocity) {
