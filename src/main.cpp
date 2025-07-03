@@ -8,8 +8,8 @@
 #include <cmath>
 #include <fstream>
 #include <string>
-#include <iomanip>  // Added for std::setw, std::setfill
-#include <filesystem>  // For filesystem operations
+#include <iomanip> 
+#include <filesystem>
 #include <nlohmann/json.hpp>
 
 int main()
@@ -17,9 +17,9 @@ int main()
     try {
         // Grid size settings
         const int n_scale = 1;
-        const int nx = 64 * n_scale;
-        const int ny = 64 * n_scale * 2;
-        const int nz = 64 * n_scale;
+        const int nx = 32 * n_scale;
+        const int ny = 32 * n_scale * 4;
+        const int nz = 32 * n_scale;
         const int maxSteps = 300;
         const float dt = 0.1f;
         
@@ -64,6 +64,21 @@ int main()
             
             // Load velocity limit parameter
             init_params.velocity_limit = j.value("velocity_limit", 0.3f);
+
+            // Load temperature boundary condition type
+            if (j.contains("temperature_bc_type")) {
+                std::string bc_type = j.value("temperature_bc_type", "adiabatic");
+                if (bc_type == "adiabatic") {
+                    init_params.temperature_bc_type = BoltzmannSolver::InitParams::TemperatureBCType::Adiabatic;
+                } else if (bc_type == "dirichlet") {
+                    init_params.temperature_bc_type = BoltzmannSolver::InitParams::TemperatureBCType::Dirichlet;
+                } else if (bc_type == "periodic") {
+                    init_params.temperature_bc_type = BoltzmannSolver::InitParams::TemperatureBCType::Periodic;
+                } else {
+                    init_params.temperature_bc_type = BoltzmannSolver::InitParams::TemperatureBCType::Adiabatic;
+                }
+            }
+            init_params.dirichlet_temperature = j.value("dirichlet_temperature", 300.0f);
         }
 
         if (replaySimulation) {
@@ -89,7 +104,7 @@ int main()
         } else {
             // Normal simulation execution
             BoltzmannSolver solver(nx, ny, nz, init_params);
-            Visualizer visualizer(800, 600);  // Create 800x600 window
+            Visualizer visualizer(800, 600);
             VDBExporter exporter(nx, ny, nz);
             
             // Initial state setup
@@ -109,13 +124,13 @@ int main()
                 solver.simulate(dt, init_params.simulation_steps_per_frame);
                 
                 // Output to OpenVDB file
-                if (saveSimulation && step % 1 == 0) {  // Save every 1 step
+                if (saveSimulation && step % 1 == 0) {
                     std::string frameFilename = outputDir + "/frame_" + std::string(4 - std::to_string(step).length(), '0') + std::to_string(step) + ".vdb";
                     exporter.exportToVDB(frameFilename.c_str(), solver.getDensityData(), solver.getVelocityData());
                 }
                 
                 // Wait to maintain 60FPS
-                std::this_thread::sleep_for(std::chrono::milliseconds(16)); // 16ms -> 160ms
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
             }
         }
         

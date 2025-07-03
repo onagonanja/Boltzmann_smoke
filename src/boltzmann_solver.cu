@@ -112,8 +112,8 @@ __global__ void temperatureCollisionKernel(float* g, float* temperature, float* 
     }
 }
 
-// Temperature field streaming step with adiabatic boundary conditions
-__global__ void temperatureStreamingKernel(float* g, float* g_new, int nx, int ny, int nz) {
+// Temperature field streaming step with selectable boundary conditions
+__global__ void temperatureStreamingKernel(float* g, float* g_new, int nx, int ny, int nz, int bc_type, float dirichlet_temperature) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     int z = blockIdx.z * blockDim.z + threadIdx.z;
@@ -126,93 +126,31 @@ __global__ void temperatureStreamingKernel(float* g, float* g_new, int nx, int n
         int y_next = y + c_t_dy[i];
         int z_next = z + c_t_dz[i];
 
-        // Adiabatic boundary conditions (zero temperature gradient at boundaries)
-        if (x_next < 0) {
-            // Left boundary: reflect the distribution function
-            int reflected_i = -1;
-            for (int j = 0; j < 7; j++) {
-                if (c_t_dx[j] == -c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
-                    reflected_i = j;
-                    break;
+        bool is_boundary = (x_next < 0 || x_next >= nx || y_next < 0 || y_next >= ny || z_next < 0 || z_next >= nz);
+        if (is_boundary) {
+            if (bc_type == 0) { // Adiabatic
+                int reflected_i = -1;
+                for (int j = 0; j < 7; j++) {
+                    if (c_t_dx[j] == -c_t_dx[i] && c_t_dy[j] == -c_t_dy[i] && c_t_dz[j] == -c_t_dz[i]) {
+                        reflected_i = j;
+                        break;
+                    }
                 }
-            }
-            if (reflected_i >= 0) {
-                g_new[7*idx + i] = g[7*idx + reflected_i];
-            } else {
-                g_new[7*idx + i] = g[7*idx + i];
-            }
-        } else if (x_next >= nx) {
-            // Right boundary: reflect the distribution function
-            int reflected_i = -1;
-            for (int j = 0; j < 7; j++) {
-                if (c_t_dx[j] == -c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
-                    reflected_i = j;
-                    break;
+                if (reflected_i >= 0) {
+                    g_new[7*idx + i] = g[7*idx + reflected_i];
+                } else {
+                    g_new[7*idx + i] = g[7*idx + i];
                 }
-            }
-            if (reflected_i >= 0) {
-                g_new[7*idx + i] = g[7*idx + reflected_i];
-            } else {
-                g_new[7*idx + i] = g[7*idx + i];
-            }
-        } else if (y_next < 0) {
-            // Bottom boundary: reflect the distribution function
-            int reflected_i = -1;
-            for (int j = 0; j < 7; j++) {
-                if (c_t_dx[j] == c_t_dx[i] && c_t_dy[j] == -c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
-                    reflected_i = j;
-                    break;
-                }
-            }
-            if (reflected_i >= 0) {
-                g_new[7*idx + i] = g[7*idx + reflected_i];
-            } else {
-                g_new[7*idx + i] = g[7*idx + i];
-            }
-        } else if (y_next >= ny) {
-            // Top boundary: reflect the distribution function
-            int reflected_i = -1;
-            for (int j = 0; j < 7; j++) {
-                if (c_t_dx[j] == c_t_dx[i] && c_t_dy[j] == -c_t_dy[i] && c_t_dz[j] == c_t_dz[i]) {
-                    reflected_i = j;
-                    break;
-                }
-            }
-            if (reflected_i >= 0) {
-                g_new[7*idx + i] = g[7*idx + reflected_i];
-            } else {
-                g_new[7*idx + i] = g[7*idx + i];
-            }
-        } else if (z_next < 0) {
-            // Front boundary: reflect the distribution function
-            int reflected_i = -1;
-            for (int j = 0; j < 7; j++) {
-                if (c_t_dx[j] == c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == -c_t_dz[i]) {
-                    reflected_i = j;
-                    break;
-                }
-            }
-            if (reflected_i >= 0) {
-                g_new[7*idx + i] = g[7*idx + reflected_i];
-            } else {
-                g_new[7*idx + i] = g[7*idx + i];
-            }
-        } else if (z_next >= nz) {
-            // Back boundary: reflect the distribution function
-            int reflected_i = -1;
-            for (int j = 0; j < 7; j++) {
-                if (c_t_dx[j] == c_t_dx[i] && c_t_dy[j] == c_t_dy[i] && c_t_dz[j] == -c_t_dz[i]) {
-                    reflected_i = j;
-                    break;
-                }
-            }
-            if (reflected_i >= 0) {
-                g_new[7*idx + i] = g[7*idx + reflected_i];
-            } else {
-                g_new[7*idx + i] = g[7*idx + i];
+            } else if (bc_type == 1) { // Dirichlet
+                g_new[7*idx + i] = dirichlet_temperature * w_t[i];
+            } else if (bc_type == 2) { // Periodic
+                int x_p = (x_next + nx) % nx;
+                int y_p = (y_next + ny) % ny;
+                int z_p = (z_next + nz) % nz;
+                int idx_p = z_p * nx * ny + y_p * nx + x_p;
+                g_new[7*idx + i] = g[7*idx_p + i];
             }
         } else {
-            // Interior points: normal streaming
             int idx_next = z_next * nx * ny + y_next * nx + x_next;
             g_new[7*idx + i] = g[7*idx_next + i];
         }
@@ -447,10 +385,10 @@ void BoltzmannSolver::streamTemperature() {
     float* d_g_new;
     cudaMalloc(&d_g_new, nx_ * ny_ * nz_ * 7 * sizeof(float));
     cudaMemset(d_g_new, 0, nx_ * ny_ * nz_ * 7 * sizeof(float));
-    
-    temperatureStreamingKernel<<<grid, block>>>(d_g_distribution, d_g_new, nx_, ny_, nz_);
+    int bc_type = static_cast<int>(init_params_.temperature_bc_type);
+    float dirichlet_temp = init_params_.dirichlet_temperature;
+    temperatureStreamingKernel<<<grid, block>>>(d_g_distribution, d_g_new, nx_, ny_, nz_, bc_type, dirichlet_temp);
     cudaDeviceSynchronize();
-    
     cudaMemcpy(d_g_distribution, d_g_new, nx_ * ny_ * nz_ * 7 * sizeof(float), cudaMemcpyDeviceToDevice);
     cudaFree(d_g_new);
 }

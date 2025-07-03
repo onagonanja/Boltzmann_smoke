@@ -11,6 +11,8 @@
   "source_injection_interval": 5,
   "simulation_steps_per_frame": 30,
   "show_temperature_field": true,
+  "temperature_bc_type": "adiabatic",
+  "dirichlet_temperature": 300.0,
   "wind": {
     "base_wind": 0.05,
     "wind_factor": 0.2
