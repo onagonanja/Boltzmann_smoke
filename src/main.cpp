@@ -79,6 +79,13 @@ int main()
                 }
             }
             init_params.dirichlet_temperature = j.value("dirichlet_temperature", 300.0f);
+
+            // カメラ位置の読み込み
+            if (j.contains("camera_pos") && j["camera_pos"].is_array() && j["camera_pos"].size() == 3) {
+                for (int i = 0; i < 3; ++i) {
+                    init_params.camera_pos[i] = j["camera_pos"][i];
+                }
+            }
         }
 
         if (replaySimulation) {
@@ -104,7 +111,7 @@ int main()
         } else {
             // Normal simulation execution
             BoltzmannSolver solver(nx, ny, nz, init_params);
-            Visualizer visualizer(800, 600);
+            Visualizer visualizer(800, 600, init_params.camera_pos);
             VDBExporter exporter(nx, ny, nz);
             
             // Initial state setup
