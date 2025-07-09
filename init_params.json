@@ -1,6 +1,6 @@
 {
   "tau_f": 0.57,
-  "tau_t": 0.97,
+  "tau_t": 1.37,
   "temperature": 250.0,
   "beta": 0.01,
   "buoyancy_rand_ratio": 0.5,
@@ -10,7 +10,7 @@
   "continuous_source": true,
   "source_injection_interval": 5,
   "simulation_steps_per_frame": 30,
-  "show_temperature_field": true,
+  "show_temperature_field": false,
   "temperature_bc_type": "adiabatic",
   "dirichlet_temperature": 300.0,
   "wind": {
@@ -22,5 +22,6 @@
     "density": 1.0
   },
   "velocity_limit": 0.0577,
-  "camera_pos": [0.0, 0.0, 20.0]
+  "camera_pos": [0.0, 0.0, 40.0],
+  "n_scale": 2
 }

@@ -35,6 +35,8 @@ public:
         float dirichlet_temperature = 300.0f;
         // --- 追加: カメラ位置 ---
         float camera_pos[3] = {0.0f, 0.0f, 20.0f};
+        // --- 追加: グリッドスケール ---
+        int n_scale = 1;  // Grid scale factor
         // Add more parameters as needed
     };
 

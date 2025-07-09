@@ -15,22 +15,6 @@
 int main()
 {
     try {
-        // Grid size settings
-        const int n_scale = 1;
-        const int nx = 32 * n_scale;
-        const int ny = 32 * n_scale * 4;
-        const int nz = 32 * n_scale;
-        const int maxSteps = 300;
-        const float dt = 0.1f;
-        
-        // Whether to save simulation results
-        bool saveSimulation = true;
-        std::string saveFilename = "simulation_data.vdb";
-
-        // Whether to replay simulation results
-        bool replaySimulation = false;
-        std::string replayFilename = "simulation_data.bin";
-
         // Load initialization parameters from JSON
         BoltzmannSolver::InitParams init_params;
         std::ifstream ifs("../init_params.json");
@@ -86,7 +70,25 @@ int main()
                     init_params.camera_pos[i] = j["camera_pos"][i];
                 }
             }
+
+            // グリッドスケールの読み込み
+            init_params.n_scale = j.value("n_scale", 1);
         }
+
+        // Grid size settings based on n_scale
+        const int nx = 32 * init_params.n_scale;
+        const int ny = 32 * init_params.n_scale * 4;
+        const int nz = 32 * init_params.n_scale;
+        const int maxSteps = 300;
+        const float dt = 0.1f;
+        
+        // Whether to save simulation results
+        bool saveSimulation = true;
+        std::string saveFilename = "simulation_data.vdb";
+
+        // Whether to replay simulation results
+        bool replaySimulation = false;
+        std::string replayFilename = "simulation_data.bin";
 
         if (replaySimulation) {
             // Replay simulation results
