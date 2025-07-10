@@ -8,30 +8,13 @@
 #include <cmath>
 #include <fstream>
 #include <string>
-#include <iomanip>  // Added for std::setw, std::setfill
-#include <filesystem>  // For filesystem operations
+#include <iomanip> 
+#include <filesystem>
 #include <nlohmann/json.hpp>
 
 int main()
 {
     try {
-        // Grid size settings
-        const int n_scale = 1;
-        const int nx = 64 * n_scale;
-        const int ny = 64 * n_scale * 2;
-        const int nz = 64 * n_scale;
-        const int maxSteps = 100;
-        const float dt = 0.1f;
-
-        
-        // Whether to save simulation results
-        bool saveSimulation = true;
-        std::string saveFilename = "simulation_data.vdb";
-
-        // Whether to replay simulation results
-        bool replaySimulation = false;
-        std::string replayFilename = "simulation_data.bin";
-
         // Load initialization parameters from JSON
         BoltzmannSolver::InitParams init_params;
         std::ifstream ifs("../init_params.json");
@@ -65,7 +48,47 @@ int main()
             
             // Load velocity limit parameter
             init_params.velocity_limit = j.value("velocity_limit", 0.3f);
+
+            // Load temperature boundary condition type
+            if (j.contains("temperature_bc_type")) {
+                std::string bc_type = j.value("temperature_bc_type", "adiabatic");
+                if (bc_type == "adiabatic") {
+                    init_params.temperature_bc_type = BoltzmannSolver::InitParams::TemperatureBCType::Adiabatic;
+                } else if (bc_type == "dirichlet") {
+                    init_params.temperature_bc_type = BoltzmannSolver::InitParams::TemperatureBCType::Dirichlet;
+                } else if (bc_type == "periodic") {
+                    init_params.temperature_bc_type = BoltzmannSolver::InitParams::TemperatureBCType::Periodic;
+                } else {
+                    init_params.temperature_bc_type = BoltzmannSolver::InitParams::TemperatureBCType::Adiabatic;
+                }
+            }
+            init_params.dirichlet_temperature = j.value("dirichlet_temperature", 300.0f);
+
+            // カメラ位置の読み込み
+            if (j.contains("camera_pos") && j["camera_pos"].is_array() && j["camera_pos"].size() == 3) {
+                for (int i = 0; i < 3; ++i) {
+                    init_params.camera_pos[i] = j["camera_pos"][i];
+                }
+            }
+
+            // グリッドスケールの読み込み
+            init_params.n_scale = j.value("n_scale", 1);
         }
+
+        // Grid size settings based on n_scale
+        const int nx = 32 * init_params.n_scale;
+        const int ny = 32 * init_params.n_scale * 4;
+        const int nz = 32 * init_params.n_scale;
+        const int maxSteps = 300;
+        const float dt = 0.1f;
+        
+        // Whether to save simulation results
+        bool saveSimulation = true;
+        std::string saveFilename = "simulation_data.vdb";
+
+        // Whether to replay simulation results
+        bool replaySimulation = false;
+        std::string replayFilename = "simulation_data.bin";
 
         if (replaySimulation) {
             // Replay simulation results
@@ -90,7 +113,7 @@ int main()
         } else {
             // Normal simulation execution
             BoltzmannSolver solver(nx, ny, nz, init_params);
-            Visualizer visualizer(800, 600);  // Create 800x600 window
+            Visualizer visualizer(800, 600, init_params.camera_pos);
             VDBExporter exporter(nx, ny, nz);
             
             // Initial state setup
@@ -110,13 +133,13 @@ int main()
                 solver.simulate(dt, init_params.simulation_steps_per_frame);
                 
                 // Output to OpenVDB file
-                if (saveSimulation && step % 1 == 0) {  // Save every 1 step
+                if (saveSimulation && step % 1 == 0) {
                     std::string frameFilename = outputDir + "/frame_" + std::string(4 - std::to_string(step).length(), '0') + std::to_string(step) + ".vdb";
                     exporter.exportToVDB(frameFilename.c_str(), solver.getDensityData(), solver.getVelocityData());
                 }
                 
                 // Wait to maintain 60FPS
-                std::this_thread::sleep_for(std::chrono::milliseconds(16)); // 16ms -> 160ms
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
             }
         }
         

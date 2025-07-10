@@ -29,6 +29,14 @@ public:
         int source_injection_interval = 10;  // Interval between smoke injections
         int simulation_steps_per_frame = 30;  // Number of simulation steps per frame
         bool show_temperature_field = true;  // Show temperature field in visualizer
+        // --- 追加: 温度場の境界条件 ---
+        enum class TemperatureBCType { Adiabatic, Dirichlet, Periodic };
+        TemperatureBCType temperature_bc_type = TemperatureBCType::Adiabatic;
+        float dirichlet_temperature = 300.0f;
+        // --- 追加: カメラ位置 ---
+        float camera_pos[3] = {0.0f, 0.0f, 20.0f};
+        // --- 追加: グリッドスケール ---
+        int n_scale = 1;  // Grid scale factor
         // Add more parameters as needed
     };
 
@@ -70,6 +78,16 @@ private:
     float* d_velocity_y;   // Y-direction velocity
     float* d_velocity_z;   // Z-direction velocity
     float* d_tau_f;       // Fluid relaxation time
+    float* d_vorticity_x;  // X-direction vorticity
+    float* d_vorticity_y;  // Y-direction vorticity
+    float* d_vorticity_z;  // Z-direction vorticity
+    float* d_h_distribution;  // Vorticity distribution function
+    float* d_scalar_vorticity;  // Scalar vorticity ω
+    
+    // GPU memory - for external forces
+    float* d_force_x;     // X-direction external force
+    float* d_force_y;     // Y-direction external force
+    float* d_force_z;     // Z-direction external force
 
     // GPU memory - for heat conduction simulation
     float* d_g_distribution;  // Temperature distribution function
@@ -83,6 +101,9 @@ private:
     std::vector<float> h_rho_;  // Density
     std::vector<float> h_tau_f_;  // Fluid relaxation time
     std::vector<float> h_tau_t_;  // Temperature relaxation time
+    std::vector<float> h_vorticity_;  // Vorticity
+    std::vector<float> h_scalar_vorticity_;  // Scalar vorticity
+    std::vector<float> h_force_;  // External forces
 
     // Helper functions
     void allocateMemory();
@@ -93,6 +114,13 @@ private:
     void streamFluid();
     void collideFluid();
     void updateMacroscopic();
+    void calculateVorticity();
+    void streamVorticity();
+    void collideVorticity();
+    void updateScalarVorticity();
+    
+    // External force functions
+    void updateExternalForces();
     
     // Heat conduction simulation functions
     void streamTemperature();

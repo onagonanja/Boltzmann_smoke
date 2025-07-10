@@ -1,7 +1,7 @@
 {
-  "tau_f": 0.67,
-  "tau_t": 1.17,
-  "temperature": 300.0,
+  "tau_f": 0.57,
+  "tau_t": 1.57,
+  "temperature": 250.0,
   "beta": 0.01,
   "buoyancy_rand_ratio": 0.5,
   "tau_rand_factor": 0.3,
@@ -10,14 +10,18 @@
   "continuous_source": true,
   "source_injection_interval": 5,
   "simulation_steps_per_frame": 30,
-  "show_temperature_field": true,
+  "show_temperature_field": false,
+  "temperature_bc_type": "adiabatic",
+  "dirichlet_temperature": 300.0,
   "wind": {
     "base_wind": 0.05,
     "wind_factor": 0.2
   },
   "smoke_source": {
-    "radius": 10.0,
+    "radius": 12.0,
     "density": 1.0
   },
-  "velocity_limit": 0.0577
+  "velocity_limit": 0.0577,
+  "camera_pos": [0.0, 0.0, 40.0],
+  "n_scale": 2
 }

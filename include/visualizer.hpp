@@ -8,6 +8,7 @@
 class Visualizer {
 public:
     Visualizer(int width, int height);
+    Visualizer(int width, int height, const float* camera_pos);
     ~Visualizer();
 
     void update(const float* density_data, const float* temperature_data, int nx, int ny, int nz, bool show_temperature = true);
