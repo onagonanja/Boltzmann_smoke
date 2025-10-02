@@ -116,7 +116,7 @@ int main()
         } else {
             // Normal simulation execution
             BoltzmannSolver solver(nx, ny, nz, init_params);
-            Visualizer visualizer(800, 600, init_params.camera_pos);
+            Visualizer visualizer(800, 600, init_params.camera_pos, init_params.show_temperature_field);
             VDBExporter exporter(nx, ny, nz);
             
             // Initial state setup

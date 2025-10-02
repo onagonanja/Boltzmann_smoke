@@ -35,6 +35,33 @@ Visualizer::Visualizer(int width, int height, const float* cam_pos)
     // glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 }
 
+Visualizer::Visualizer(int width, int height, const float* cam_pos, bool show_temperature)
+    : window_width(show_temperature ? width * 2 : width), window_height(height), window(nullptr),
+      densityShaderProgram(0), temperatureShaderProgram(0),
+      camera_pos(cam_pos[0], cam_pos[1], cam_pos[2]), camera_front(0.0f, 0.0f, -1.0f), camera_up(0.0f, 1.0f, 0.0f),
+      yaw(-90.0f), pitch(0.0f), last_x(width / 2.0f), last_y(height / 2.0f), first_mouse(true)
+{
+    if (!glfwInit()) {
+        throw std::runtime_error("Failed to initialize GLFW");
+    }
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    const char* title = show_temperature ? "Boltzmann Smoke Simulation - Density | Temperature" : "Boltzmann Smoke Simulation - Density";
+    window = glfwCreateWindow(window_width, window_height, title, nullptr, nullptr);
+    if (!window) {
+        glfwTerminate();
+        throw std::runtime_error("Failed to create window");
+    }
+    glfwMakeContextCurrent(window);
+    glfwSetWindowUserPointer(window, this);
+    glfwSetKeyCallback(window, keyCallback);
+    if (glewInit() != GLEW_OK) {
+        throw std::runtime_error("Failed to initialize GLEW");
+    }
+    initShaders();
+}
+
 Visualizer::~Visualizer() {
     if (window) {
         glfwDestroyWindow(window);
