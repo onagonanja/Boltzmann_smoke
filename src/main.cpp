@@ -48,6 +48,9 @@ int main()
             
             // Load velocity limit parameter
             init_params.velocity_limit = j.value("velocity_limit", 0.3f);
+            
+            // Load force term coefficient parameter
+            init_params.force_term_coefficient = j.value("force_term_coefficient", 0.01f);
 
             // Load temperature boundary condition type
             if (j.contains("temperature_bc_type")) {
@@ -76,9 +79,9 @@ int main()
         }
 
         // Grid size settings based on n_scale
-        const int nx = 32 * init_params.n_scale;
-        const int ny = 32 * init_params.n_scale * 4;
-        const int nz = 32 * init_params.n_scale;
+        const int nx = 32 * init_params.n_scale * 1;
+        const int ny = 32 * init_params.n_scale * 2;
+        const int nz = 32 * init_params.n_scale * 1;
         const int maxSteps = 300;
         const float dt = 0.1f;
         

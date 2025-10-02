@@ -39,9 +39,9 @@ __device__ __constant__ float w_h[7] = {1.0f/4.0f, 1.0f/8.0f, 1.0f/8.0f, 1.0f/8.
 __device__ int found_negative_f = 0;
 __device__ int found_negative_g = 0;
 
-__constant__ int focused_point_x = 0;
-__constant__ int focused_point_y = 127;
-__constant__ int focused_point_z = 0;
+__constant__ int focused_point_x = 32;
+__constant__ int focused_point_y = 32;
+__constant__ int focused_point_z = 32;
 
 
 // External force update kernel
@@ -61,7 +61,7 @@ __global__ void updateExternalForcesKernel(float* force_x, float* force_y, float
     // Calculate buoyancy force
     const float g = 9.81f;
     const float T_ref = 300.0f;
-    float rand_factor = 0.5f + 0.5f * curand_uniform(&state);
+    float rand_factor = 1.0f + 0.0f * curand_uniform(&state);
     float3 F_buoy = make_float3(0.0f, beta * g * (T_local - T_ref) * rand_factor, 0.0f);
 
     // Calculate vorticity constraint force F_conf = λ|ω - ∇×v|(N × ω)
@@ -81,16 +81,21 @@ __global__ void updateExternalForcesKernel(float* force_x, float* force_y, float
     force_x[idx] = F_buoy.x + F_conf.x;
     force_y[idx] = F_buoy.y + F_conf.y;
     force_z[idx] = F_buoy.z + F_conf.z;
-    if (F_conf.y > 0 || F_conf.z > 0 || F_conf.x > 0) {
-        // printf("F_conf: %f, %f, %f\n", F_conf.x, F_conf.y, F_conf.z);
-    }
+    
+    // int x = idx % nx;
+    // int y = (idx / nx) % ny;
+    // int z = idx / (nx * ny);
+    // if (x == focused_point_x && y == focused_point_y && z == focused_point_z) {
+    //     printf("( %d, %d, %d ) T_local: %f\n", x, y, z, T_local);
+    //     printf("( %d, %d, %d ) F_buoy: %f, %f, %f\n", x, y, z, F_buoy.x, F_buoy.y, F_buoy.z);
+    // }
 }
 
 // Modified fluid collision step without external force calculation
 __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* vel_y, float* vel_z, 
                                     float* tau_f, float* force_x, float* force_y, float* force_z,
                                     int nx, int ny, int nz, int current_step, float velocity_limit, 
-                                    float tau_rand_factor) {
+                                    float tau_rand_factor, float force_term_coefficient) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= nx * ny * nz) return;
 
@@ -103,17 +108,33 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
     float3 vel_local = make_float3(vel_x[idx], vel_y[idx], vel_z[idx]);
     float3 force_local = make_float3(force_x[idx], force_y[idx], force_z[idx]);
 
-    vel_local.y += force_local.y;
-
+    vel_local.x += force_local.x / 2.0f;
+    vel_local.y += force_local.y / 2.0f;
+    vel_local.z += force_local.z / 2.0f;
+    
     // Limit velocity
     float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
     float u_mag = sqrtf(u_sq);
+
+    int x = idx % nx;
+    int y = (idx / nx) % ny;
+    int z = idx / (nx * ny);
+    if (x == focused_point_x && y == focused_point_y && z == focused_point_z) {
+        // printf("( %d, %d, %d ) fluild_collision u_mag: %f\n", x, y, z, u_mag);
+        // printf("fluidCollisionKernel ( %d, %d, %d ) vel_local: %f, %f, %f\n", x, y, z, vel_local.x, vel_local.y, vel_local.z);
+    }
+    
     if (u_mag > velocity_limit) {
         float scale = velocity_limit / u_mag;
         vel_local.x *= scale;
         vel_local.y *= scale;
         vel_local.z *= scale;
         u_sq = velocity_limit * velocity_limit;
+    }
+
+    if (x == focused_point_x && y == focused_point_y && z == focused_point_z) {
+        // printf("( %d, %d, %d ) fluild_collision u_mag: %f\n", x, y, z, u_mag);
+        // printf("fluidCollisionKernel_fixed ( %d, %d, %d ) vel_local: %f, %f, %f\n", x, y, z, vel_local.x, vel_local.y, vel_local.z);
     }
 
     // Calculate equilibrium distribution
@@ -131,8 +152,9 @@ __global__ void fluidCollisionKernel(float* f, float* rho, float* vel_x, float* 
         float F_x = w[i] * ( (c_dx[i] - vel_local.x) / c_s2 + ci_dot_u * c_dx[i] / (c_s2 * c_s2)) * force_local.x;
         float F_y = w[i] * ( (c_dy[i] - vel_local.y) / c_s2 + ci_dot_u * c_dy[i] / (c_s2 * c_s2)) * force_local.y;
         float F_z = w[i] * ( (c_dz[i] - vel_local.z) / c_s2 + ci_dot_u * c_dz[i] / (c_s2 * c_s2)) * force_local.z;
-        float Fi = F_x + F_y + F_z;
-        f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]) + 0.001f *(1.0f - 0.5f / tau) * Fi;
+        float Fi = (F_x + F_y + F_z) * (1.0f - 0.5f / tau);
+
+        f[19*idx + i] = f[19*idx + i] - (1.0f/tau) * (f[19*idx + i] - f_eq[i]) + force_term_coefficient * Fi;
     }
 }
 
@@ -145,15 +167,18 @@ __global__ void temperatureCollisionKernel(float* g, float* temperature, float* 
     float T_local = temperature[idx];
     float3 vel_local = make_float3(vel_x[idx], vel_y[idx], vel_z[idx]);
 
-    float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
-    float u_mag = sqrtf(u_sq);
-    velocity_limit = velocity_limit * 1.0f;
-
     // Calculate equilibrium distribution for temperature field
     for (int i = 0; i < 7; i++) {
         float ci_dot_u = c_t_dx[i] * vel_local.x + c_t_dy[i] * vel_local.y + c_t_dz[i] * vel_local.z;
         g_eq[i] = w_t[i] * T_local * (1.0f + 3.0f * ci_dot_u);
     }
+
+    // int x = idx % nx;
+    // int y = (idx / nx) % ny;
+    // int z = idx / (nx * ny);
+    // if (x == focused_point_x && y == focused_point_y && z == focused_point_z) {
+    //     printf("g_eq: %f\n", g_eq[0]);
+    // }
 
     float tau = tau_t[idx];
     for (int i = 0; i < 7; i++) {
@@ -209,6 +234,7 @@ __global__ void temperatureStreamingKernel(float* g, float* g_new, int nx, int n
 // Temperature field update kernel
 __global__ void updateTemperatureKernel(float* g, float* temperature, int nx, int ny, int nz) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
     if (idx >= nx * ny * nz) return;
 
     float T = 0.0f;
@@ -260,7 +286,7 @@ __global__ void streamingKernel(float* f, float* f_new, int nx, int ny, int nz) 
 }
 
 // CUDA kernel for macroscopic quantity calculation
-__global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* vel_y, float* vel_z, int nx, int ny, int nz) {
+__global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* vel_y, float* vel_z, float* force_x, float* force_y, float* force_z, int nx, int ny, int nz, float velocity_limit) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     int z = blockIdx.z * blockDim.z + threadIdx.z;
@@ -271,6 +297,7 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
     
     float rho_local = 0.0f;
     float3 vel_local = make_float3(0.0f, 0.0f, 0.0f);
+    float3 force_local = make_float3(force_x[idx], force_y[idx], force_z[idx]);
     
     for (int i = 0; i < 19; i++) {
         float fi = f[19 * idx + i];
@@ -278,8 +305,17 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
         vel_local.x += c_dx[i] * fi;
         vel_local.y += c_dy[i] * fi;
         vel_local.z += c_dz[i] * fi;
+
+        // if (x == focused_point_x && y == focused_point_y && z == focused_point_z) {
+        //     printf("( %d, %d, %d ) calculateMacroKernel fi: %f\n", x, y, z, fi);
+        // }
     }
-    
+
+    // if (x == focused_point_x && y == focused_point_y && z == focused_point_z) {
+    //     printf("( %d, %d, %d ) calculateMacroKernel vel_local: %f, %f, %f\n", x, y, z, vel_local.x, vel_local.y, vel_local.z);
+    //     printf("( %d, %d, %d ) calculateMacroKernel force_local: %f, %f, %f\n", x, y, z, force_local.x, force_local.y, force_local.z);
+    // }
+
     // Normalize velocity
     if (rho_local > 1e-6f) {
         vel_local.x /= rho_local;
@@ -290,12 +326,16 @@ __global__ void calculateMacroKernel(float* f, float* rho, float* vel_x, float* 
     float u_sq = vel_local.x * vel_local.x + vel_local.y * vel_local.y + vel_local.z * vel_local.z;
     float u_mag = sqrtf(u_sq);
 
-    if (u_mag > 0.0577f) {
-        float scale = 0.0577f / u_mag;
+    if (u_mag > velocity_limit) {
+        float scale = velocity_limit / u_mag;
         vel_local.x *= scale;
         vel_local.y *= scale;
         vel_local.z *= scale;
     }
+
+    // if (x == focused_point_x && y == focused_point_y && z == focused_point_z) {
+    //     printf("calculateMacroKernel vel_local.y: %f\n", vel_local.y);
+    // }
     
     // Save results
     rho[idx] = rho_local;
@@ -372,15 +412,19 @@ __global__ void injectSmokeSourceKernel(float* f, float* g, float* rho, float* t
     float dy = y - center_y;
     float dz = z - center_z;
     float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+
+    float max_step = 1000;
     
     // Check if point is within source radius
     if (dist < source_radius) {
         // Initialize random number generator
         curandState state;
         curand_init(clock64(), idx + current_step, 0, &state);
+
+        float step_ratio = min(current_step / max_step, 1.0f);
         
         // Add smoke density with injection rate
-        rho[idx] = injection_rate * (0.8f + 0.2f * curand_uniform(&state));
+        rho[idx] = injection_rate * (0.8f + 0.2f * curand_uniform(&state)) * step_ratio;
 
         // Update fluid distribution function
         for (int i = 0; i < 19; i++) {
@@ -388,7 +432,8 @@ __global__ void injectSmokeSourceKernel(float* f, float* g, float* rho, float* t
         }
         
         // Add temperature with injection rate
-        temperature[idx] = 300 + (source_temperature) * (0.8f + 0.2f * curand_uniform(&state));
+        // temperature[idx] = 300 + (source_temperature) * (0.8f + 0.2f * curand_uniform(&state));
+        temperature[idx] = source_temperature;
         
         // Update temperature distribution function
         for (int i = 0; i < 7; i++) {
@@ -611,7 +656,7 @@ void BoltzmannSolver::collideFluid() {
     int grid_size = nx_ * ny_ * nz_;
     int block_size = 256;
     int num_blocks = (grid_size + block_size - 1) / block_size;
-    fluidCollisionKernel<<<num_blocks, block_size>>>(d_f_distribution, d_density, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_f, d_force_x, d_force_y, d_force_z, nx_, ny_, nz_, current_step_, init_params_.velocity_limit, init_params_.tau_rand_factor);
+    fluidCollisionKernel<<<num_blocks, block_size>>>(d_f_distribution, d_density, d_velocity_x, d_velocity_y, d_velocity_z, d_tau_f, d_force_x, d_force_y, d_force_z, nx_, ny_, nz_, current_step_, init_params_.velocity_limit, init_params_.tau_rand_factor, init_params_.force_term_coefficient);
     cudaDeviceSynchronize();
 }
 
@@ -651,7 +696,7 @@ void BoltzmannSolver::updateMacroscopic() {
               (nz_ + block.z - 1) / block.z);
     
     // Execute macroscopic quantity calculation kernel
-    calculateMacroKernel<<<grid, block>>>(d_f_distribution, d_density, d_velocity_x, d_velocity_y, d_velocity_z, nx_, ny_, nz_);
+    calculateMacroKernel<<<grid, block>>>(d_f_distribution, d_density, d_velocity_x, d_velocity_y, d_velocity_z, d_force_x, d_force_y, d_force_z, nx_, ny_, nz_, init_params_.velocity_limit);
     cudaDeviceSynchronize();
 }
 
@@ -798,8 +843,6 @@ void BoltzmannSolver::copyToHost() {
 }
 
 void BoltzmannSolver::simulate(float dt, int steps) {
-    float period = 30.0f;
-    float omega = 2.0f * 3.14159265358979323846f / period;
     for (int step = 0; step < steps; ++step) {
         cudaMemcpy(d_density, h_density, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyHostToDevice);
         cudaMemcpy(d_temperature, h_temperature, nx_ * ny_ * nz_ * sizeof(float), cudaMemcpyHostToDevice);
@@ -820,7 +863,7 @@ void BoltzmannSolver::simulate(float dt, int steps) {
         streamVorticity();
 
         updateMacroscopic();
-        updateTemperature();
+        updateTemperature();     
         updateScalarVorticity();
 
         if(init_params_.continuous_source && current_step_ % init_params_.source_injection_interval == 0) {
