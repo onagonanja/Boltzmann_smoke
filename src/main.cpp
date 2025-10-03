@@ -52,6 +52,9 @@ int main()
             // Load force term coefficient parameter
             init_params.force_term_coefficient = j.value("force_term_coefficient", 0.01f);
 
+            // Load visualizer usage flag
+            init_params.use_visualizer = j.value("use_visualizer", true);
+
             // Load temperature boundary condition type
             if (j.contains("temperature_bc_type")) {
                 std::string bc_type = j.value("temperature_bc_type", "adiabatic");
@@ -116,7 +119,6 @@ int main()
         } else {
             // Normal simulation execution
             BoltzmannSolver solver(nx, ny, nz, init_params);
-            Visualizer visualizer(800, 600, init_params.camera_pos, init_params.show_temperature_field);
             VDBExporter exporter(nx, ny, nz);
             
             // Initial state setup
@@ -128,21 +130,35 @@ int main()
                 std::filesystem::create_directory(outputDir);
             }
             
-            for (int step = 0; step < maxSteps && !visualizer.shouldClose(); ++step) {
-                // Update visualizer
-                visualizer.update(solver.getDensityData(), solver.getTemperatureData(), nx, ny, nz, init_params.show_temperature_field);
-                
-                // Update simulation
-                solver.simulate(dt, init_params.simulation_steps_per_frame);
-                
-                // Output to OpenVDB file
-                if (saveSimulation && step % 1 == 0) {
-                    std::string frameFilename = outputDir + "/frame_" + std::string(4 - std::to_string(step).length(), '0') + std::to_string(step) + ".vdb";
-                    exporter.exportToVDB(frameFilename.c_str(), solver.getDensityData(), solver.getVelocityData());
+            if (init_params.use_visualizer) {
+                Visualizer visualizer(800, 600, init_params.camera_pos, init_params.show_temperature_field);
+                for (int step = 0; step < maxSteps && !visualizer.shouldClose(); ++step) {
+                    // Update visualizer
+                    visualizer.update(solver.getDensityData(), solver.getTemperatureData(), nx, ny, nz, init_params.show_temperature_field);
+                    
+                    // Update simulation
+                    solver.simulate(dt, init_params.simulation_steps_per_frame);
+                    
+                    // Output to OpenVDB file
+                    if (saveSimulation && step % 1 == 0) {
+                        std::string frameFilename = outputDir + "/frame_" + std::string(4 - std::to_string(step).length(), '0') + std::to_string(step) + ".vdb";
+                        exporter.exportToVDB(frameFilename.c_str(), solver.getDensityData(), solver.getVelocityData());
+                    }
+                    
+                    // Wait to maintain 60FPS
+                    std::this_thread::sleep_for(std::chrono::milliseconds(16));
                 }
-                
-                // Wait to maintain 60FPS
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            } else {
+                for (int step = 0; step < maxSteps; ++step) {
+                    // Update simulation only
+                    solver.simulate(dt, init_params.simulation_steps_per_frame);
+                    
+                    // Output to OpenVDB file
+                    if (saveSimulation && step % 1 == 0) {
+                        std::string frameFilename = outputDir + "/frame_" + std::string(4 - std::to_string(step).length(), '0') + std::to_string(step) + ".vdb";
+                        exporter.exportToVDB(frameFilename.c_str(), solver.getDensityData(), solver.getVelocityData());
+                    }
+                }
             }
         }
         
