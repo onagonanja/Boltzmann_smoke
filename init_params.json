@@ -24,7 +24,7 @@
   "velocity_limit": 0.0577,
   "force_term_coefficient": 0.001,
   "camera_pos": [0.0, 0.0, 10.0],
-  "use_visualizer": false,
+  "use_visualizer": true,
   "print_stats": false,
   "n_scale": 1
 }
