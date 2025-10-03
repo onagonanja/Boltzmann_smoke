@@ -31,6 +31,7 @@ public:
         bool show_temperature_field = true;  // Show temperature field in visualizer
         bool use_visualizer = true;  // Enable/disable on-screen visualization
         bool print_stats = true;  // Enable/disable console statistics output
+        bool print_timing = false;  // Enable/disable timing output for update/simulate
         float force_term_coefficient = 0.01f;  // Coefficient for external force term in collision
         // --- 追加: 温度場の境界条件 ---
         enum class TemperatureBCType { Adiabatic, Dirichlet, Periodic };
