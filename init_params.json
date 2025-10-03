@@ -25,5 +25,6 @@
   "force_term_coefficient": 0.001,
   "camera_pos": [0.0, 0.0, 10.0],
   "use_visualizer": false,
+  "print_stats": false,
   "n_scale": 1
 }

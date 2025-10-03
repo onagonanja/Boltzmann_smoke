@@ -30,6 +30,7 @@ public:
         int simulation_steps_per_frame = 30;  // Number of simulation steps per frame
         bool show_temperature_field = true;  // Show temperature field in visualizer
         bool use_visualizer = true;  // Enable/disable on-screen visualization
+        bool print_stats = true;  // Enable/disable console statistics output
         float force_term_coefficient = 0.01f;  // Coefficient for external force term in collision
         // --- 追加: 温度場の境界条件 ---
         enum class TemperatureBCType { Adiabatic, Dirichlet, Periodic };

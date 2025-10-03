@@ -54,6 +54,8 @@ int main()
 
             // Load visualizer usage flag
             init_params.use_visualizer = j.value("use_visualizer", true);
+            // Load console print flag
+            init_params.print_stats = j.value("print_stats", true);
 
             // Load temperature boundary condition type
             if (j.contains("temperature_bc_type")) {

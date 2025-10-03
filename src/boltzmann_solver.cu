@@ -873,15 +873,17 @@ void BoltzmannSolver::simulate(float dt, int steps) {
         copyToHost();
 
         // Display progress
-        std::cout << "\rStep " << current_step_ 
-                  << " | Active voxels: " << countActiveVoxels() 
-                  << " | Max density: " << getMaxDensity() 
-                  << " | Avg density: " << getAverageDensity() 
-                  << " | Max temperature: " << getMaxTemperature()
-                  << " | Avg temperature: " << getAverageTemperature()
-                  << " | Avg velocity: " << getAverageVelocity()
-                  << " | Max velocity: " << getMaxVelocity()
-                  << std::flush;
+        if (init_params_.print_stats) {
+            std::cout << "\rStep " << current_step_ 
+                      << " | Active voxels: " << countActiveVoxels() 
+                      << " | Max density: " << getMaxDensity() 
+                      << " | Avg density: " << getAverageDensity() 
+                      << " | Max temperature: " << getMaxTemperature()
+                      << " | Avg temperature: " << getAverageTemperature()
+                      << " | Avg velocity: " << getAverageVelocity()
+                      << " | Max velocity: " << getMaxVelocity()
+                      << std::flush;
+        }
 
         current_step_++;
     }
