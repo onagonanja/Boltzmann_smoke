@@ -146,7 +146,7 @@ int main()
                  
                  if (init_params.print_timing) {
                      double simulate_ms = std::chrono::duration<double, std::milli>(s1 - s0).count();
-                     std::cout << "\nsimulate: " << simulate_ms << " ms" << std::flush;
+                     std::cout << "\rsimulate: " << simulate_ms << " ms" << std::flush;
                  }
                  
                  // Output to OpenVDB file

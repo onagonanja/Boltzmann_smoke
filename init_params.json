@@ -10,7 +10,7 @@
   "continuous_source": true,
   "source_injection_interval": 1,
   "simulation_steps_per_frame": 10,
-  "show_temperature_field": true,
+  "show_temperature_field": false,
   "temperature_bc_type": "periodic",
   "dirichlet_temperature": 300.0,
   "wind": {

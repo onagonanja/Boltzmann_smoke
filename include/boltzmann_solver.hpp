@@ -33,13 +33,10 @@ public:
         bool print_stats = true;  // Enable/disable console statistics output
         bool print_timing = false;  // Enable/disable timing output for update/simulate
         float force_term_coefficient = 0.01f;  // Coefficient for external force term in collision
-        // --- 追加: 温度場の境界条件 ---
         enum class TemperatureBCType { Adiabatic, Dirichlet, Periodic };
         TemperatureBCType temperature_bc_type = TemperatureBCType::Adiabatic;
         float dirichlet_temperature = 300.0f;
-        // --- 追加: カメラ位置 ---
         float camera_pos[3] = {0.0f, 0.0f, 20.0f};
-        // --- 追加: グリッドスケール ---
         int n_scale = 1;  // Grid scale factor
         // Add more parameters as needed
     };
