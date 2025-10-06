@@ -30,9 +30,38 @@ Visualizer::Visualizer(int width, int height, const float* cam_pos)
         throw std::runtime_error("Failed to initialize GLEW");
     }
     initShaders();
+    initBuffers();
     // glfwSetCursorPosCallback(window, mouseCallback);
     // glfwSetScrollCallback(window, scrollCallback);
     // glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+}
+
+Visualizer::Visualizer(int width, int height, const float* cam_pos, bool show_temperature)
+    : window_width(show_temperature ? width * 2 : width), window_height(height), window(nullptr),
+      densityShaderProgram(0), temperatureShaderProgram(0),
+      camera_pos(cam_pos[0], cam_pos[1], cam_pos[2]), camera_front(0.0f, 0.0f, -1.0f), camera_up(0.0f, 1.0f, 0.0f),
+      yaw(-90.0f), pitch(0.0f), last_x(width / 2.0f), last_y(height / 2.0f), first_mouse(true)
+{
+    if (!glfwInit()) {
+        throw std::runtime_error("Failed to initialize GLFW");
+    }
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    const char* title = show_temperature ? "Boltzmann Smoke Simulation - Density | Temperature" : "Boltzmann Smoke Simulation - Density";
+    window = glfwCreateWindow(window_width, window_height, title, nullptr, nullptr);
+    if (!window) {
+        glfwTerminate();
+        throw std::runtime_error("Failed to create window");
+    }
+    glfwMakeContextCurrent(window);
+    glfwSetWindowUserPointer(window, this);
+    glfwSetKeyCallback(window, keyCallback);
+    if (glewInit() != GLEW_OK) {
+        throw std::runtime_error("Failed to initialize GLEW");
+    }
+    initShaders();
+    initBuffers();
 }
 
 Visualizer::~Visualizer() {
@@ -47,14 +76,15 @@ void Visualizer::initShaders() {
     const char* densityVertexShaderSource = R"(
         #version 330 core
         layout (location = 0) in vec3 aPos;
-        layout (location = 1) in float aDensity;
+        layout (location = 1) in vec4 aInstance; // xyz: offset, w: value
         out float Density;
         uniform mat4 model;
         uniform mat4 view;
         uniform mat4 projection;
         void main() {
-            gl_Position = projection * view * model * vec4(aPos, 1.0);
-            Density = aDensity;
+            vec3 worldPos = aPos + aInstance.xyz;
+            gl_Position = projection * view * model * vec4(worldPos, 1.0);
+            Density = aInstance.w;
         }
     )";
     const char* densityFragmentShaderSource = R"(
@@ -72,14 +102,15 @@ void Visualizer::initShaders() {
     const char* temperatureVertexShaderSource = R"(
         #version 330 core
         layout (location = 0) in vec3 aPos;
-        layout (location = 1) in float aTemperature;
+        layout (location = 1) in vec4 aInstance; // xyz: offset, w: value
         out float Temperature;
         uniform mat4 model;
         uniform mat4 view;
         uniform mat4 projection;
         void main() {
-            gl_Position = projection * view * model * vec4(aPos, 1.0);
-            Temperature = aTemperature;
+            vec3 worldPos = aPos + aInstance.xyz;
+            gl_Position = projection * view * model * vec4(worldPos, 1.0);
+            Temperature = aInstance.w;
         }
     )";
     const char* temperatureFragmentShaderSource = R"(
@@ -127,6 +158,51 @@ void Visualizer::initShaders() {
     glDeleteShader(temperatureFragmentShader);
 }
 
+void Visualizer::initBuffers() {
+    // Unit cube geometry (positions only), indexed
+    float vertices[] = {
+        -0.05f, -0.05f,  0.05f,
+         0.05f, -0.05f,  0.05f,
+         0.05f,  0.05f,  0.05f,
+        -0.05f,  0.05f,  0.05f,
+        -0.05f, -0.05f, -0.05f,
+         0.05f, -0.05f, -0.05f,
+         0.05f,  0.05f, -0.05f,
+        -0.05f,  0.05f, -0.05f
+    };
+    unsigned int indices[] = {
+        0, 1, 2, 2, 3, 0,
+        4, 5, 6, 6, 7, 4,
+        0, 4, 7, 7, 3, 0,
+        1, 5, 6, 6, 2, 1,
+        3, 2, 6, 6, 7, 3,
+        0, 1, 5, 5, 4, 0
+    };
+
+    glGenVertexArrays(1, &cubeVAO);
+    glGenBuffers(1, &cubeVBO);
+    glGenBuffers(1, &cubeEBO);
+    glGenBuffers(1, &instanceVBO);
+
+    glBindVertexArray(cubeVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cubeEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    // Instance buffer: vec4(offset.xyz, value)
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+    glBufferData(GL_ARRAY_BUFFER, 1, nullptr, GL_STREAM_DRAW); // will resize each frame
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribDivisor(1, 1);
+
+    glBindVertexArray(0);
+}
+
 void Visualizer::renderField(const float* data, int nx, int ny, int nz, bool isTemperature, int viewport_x, int viewport_y, int viewport_width, int viewport_height) {
     glViewport(viewport_x, viewport_y, viewport_width, viewport_height);
     
@@ -139,56 +215,35 @@ void Visualizer::renderField(const float* data, int nx, int ny, int nz, bool isT
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
     
     float threshold = isTemperature ? 280.0f : 0.00197f;
-    
-    for (int z = 0; z < nz; z++) {
-        for (int y = 0; y < ny; y++) {
-            for (int x = 0; x < nx; x++) {
+
+    std::vector<float> instances; // packed as x,y,z,value
+    instances.reserve(nx * ny * nz / 4);
+    for (int z = 0; z < nz; ++z) {
+        for (int y = 0; y < ny; ++y) {
+            for (int x = 0; x < nx; ++x) {
                 float value = data[z * nx * ny + y * nx + x];
-                if (isTemperature ? (value > threshold) : (value > threshold)) {
-                    glm::mat4 model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(x - nx/2, y - ny/2, z - nz/2) * 0.1f);
-                    model = glm::scale(model, glm::vec3(0.1f));
-                    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
-                    
-                    float vertices[] = {
-                        -0.5f, -0.5f,  0.5f, value,
-                         0.5f, -0.5f,  0.5f, value,
-                         0.5f,  0.5f,  0.5f, value,
-                        -0.5f,  0.5f,  0.5f, value,
-                        -0.5f, -0.5f, -0.5f, value,
-                         0.5f, -0.5f, -0.5f, value,
-                         0.5f,  0.5f, -0.5f, value,
-                        -0.5f,  0.5f, -0.5f, value,
-                    };
-                    unsigned int indices[] = {
-                        0, 1, 2, 2, 3, 0,
-                        4, 5, 6, 6, 7, 4,
-                        0, 4, 7, 7, 3, 0,
-                        1, 5, 6, 6, 2, 1,
-                        3, 2, 6, 6, 7, 3,
-                        0, 1, 5, 5, 4, 0
-                    };
-                    unsigned int VBO, VAO, EBO;
-                    glGenVertexArrays(1, &VAO);
-                    glGenBuffers(1, &VBO);
-                    glGenBuffers(1, &EBO);
-                    glBindVertexArray(VAO);
-                    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-                    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-                    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-                    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-                    glEnableVertexAttribArray(0);
-                    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(3 * sizeof(float)));
-                    glEnableVertexAttribArray(1);
-                    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
-                    glDeleteVertexArrays(1, &VAO);
-                    glDeleteBuffers(1, &VBO);
-                    glDeleteBuffers(1, &EBO);
+                if ((isTemperature && value > threshold) || (!isTemperature && value > threshold)) {
+                    float ox = (x - nx/2) * 0.1f;
+                    float oy = (y - ny/2) * 0.1f;
+                    float oz = (z - nz/2) * 0.1f;
+                    instances.push_back(ox);
+                    instances.push_back(oy);
+                    instances.push_back(oz);
+                    instances.push_back(value);
                 }
             }
         }
     }
+
+    glm::mat4 model = glm::mat4(1.0f);
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
+
+    glBindVertexArray(cubeVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+    glBufferData(GL_ARRAY_BUFFER, instances.size() * sizeof(float), instances.data(), GL_STREAM_DRAW);
+
+    glDrawElementsInstanced(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0, (GLsizei)(instances.size() / 4));
+    glBindVertexArray(0);
 }
 
 void Visualizer::update(const float* density_data, const float* temperature_data, int nx, int ny, int nz, bool show_temperature) {

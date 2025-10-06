@@ -9,6 +9,7 @@ class Visualizer {
 public:
     Visualizer(int width, int height);
     Visualizer(int width, int height, const float* camera_pos);
+    Visualizer(int width, int height, const float* camera_pos, bool show_temperature);
     ~Visualizer();
 
     void update(const float* density_data, const float* temperature_data, int nx, int ny, int nz, bool show_temperature = true);
@@ -17,6 +18,7 @@ public:
 
 private:
     void initShaders();
+    void initBuffers();
     void renderField(const float* data, int nx, int ny, int nz, bool isTemperature, int viewport_x, int viewport_y, int viewport_width, int viewport_height);
     static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
     static void mouseCallback(GLFWwindow* window, double xpos, double ypos);
@@ -26,6 +28,10 @@ private:
     GLFWwindow* window;
     unsigned int densityShaderProgram;
     unsigned int temperatureShaderProgram;
+    unsigned int cubeVAO = 0;
+    unsigned int cubeVBO = 0;
+    unsigned int cubeEBO = 0;
+    unsigned int instanceVBO = 0; // vec4(instanceOffset.xyz, value)
 
     // Camera-related variables
     glm::vec3 camera_pos;

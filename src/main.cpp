@@ -52,6 +52,13 @@ int main()
             // Load force term coefficient parameter
             init_params.force_term_coefficient = j.value("force_term_coefficient", 0.01f);
 
+            // Load visualizer usage flag
+            init_params.use_visualizer = j.value("use_visualizer", true);
+            // Load console print flag
+            init_params.print_stats = j.value("print_stats", true);
+            // Load timing print flag
+            init_params.print_timing = j.value("print_timing", false);
+
             // Load temperature boundary condition type
             if (j.contains("temperature_bc_type")) {
                 std::string bc_type = j.value("temperature_bc_type", "adiabatic");
@@ -89,62 +96,66 @@ int main()
         bool saveSimulation = true;
         std::string saveFilename = "simulation_data.vdb";
 
-        // Whether to replay simulation results
-        bool replaySimulation = false;
-        std::string replayFilename = "simulation_data.bin";
-
-        if (replaySimulation) {
-            // Replay simulation results
-            SimulationRecorder recorder(nx, ny, nz);
-            if (!recorder.loadFromFile(replayFilename)) {
-                std::cerr << "Failed to load simulation results" << std::endl;
-                return 1;
-            }
-
-            Visualizer visualizer(800, 600);
-            int currentFrame = 0;
-            
-            // Create dummy temperature data for replay (since recorder only stores density)
-            std::vector<float> dummy_temperature(nx * ny * nz, 300.0f);
-            
-            while (!visualizer.shouldClose()) {
-                const auto& frame = recorder.getFrame(currentFrame);
-                visualizer.update(frame.data(), dummy_temperature.data(), nx, ny, nz, init_params.show_temperature_field);
-                currentFrame = (currentFrame + 1) % recorder.getFrameCount();
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
-            }
-        } else {
-            // Normal simulation execution
-            BoltzmannSolver solver(nx, ny, nz, init_params);
-            Visualizer visualizer(800, 600, init_params.camera_pos);
-            VDBExporter exporter(nx, ny, nz);
-            
-            // Initial state setup
-            solver.initialize();
-            
-            // Create folder for VDB file storage
-            std::string outputDir = "vdb_output";
-            if (!std::filesystem::exists(outputDir)) {
-                std::filesystem::create_directory(outputDir);
-            }
-            
-            for (int step = 0; step < maxSteps && !visualizer.shouldClose(); ++step) {
-                // Update visualizer
-                visualizer.update(solver.getDensityData(), solver.getTemperatureData(), nx, ny, nz, init_params.show_temperature_field);
-                
-                // Update simulation
-                solver.simulate(dt, init_params.simulation_steps_per_frame);
-                
-                // Output to OpenVDB file
-                if (saveSimulation && step % 1 == 0) {
-                    std::string frameFilename = outputDir + "/frame_" + std::string(4 - std::to_string(step).length(), '0') + std::to_string(step) + ".vdb";
-                    exporter.exportToVDB(frameFilename.c_str(), solver.getDensityData(), solver.getVelocityData());
-                }
-                
-                // Wait to maintain 60FPS
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
-            }
+        // Normal simulation execution
+        BoltzmannSolver solver(nx, ny, nz, init_params);
+        VDBExporter exporter(nx, ny, nz);
+        
+        // Initial state setup
+        solver.initialize();
+        
+        // Create folder for VDB file storage
+        std::string outputDir = "vdb_output";
+        if (!std::filesystem::exists(outputDir)) {
+            std::filesystem::create_directory(outputDir);
         }
+        
+         if (init_params.use_visualizer) {
+             Visualizer visualizer(800, 600, init_params.camera_pos, init_params.show_temperature_field);
+             for (int step = 0; step < maxSteps && !visualizer.shouldClose(); ++step) {
+                 // Update visualizer (timed)
+                 auto t0 = std::chrono::high_resolution_clock::now();
+                 visualizer.update(solver.getDensityData(), solver.getTemperatureData(), nx, ny, nz, init_params.show_temperature_field);
+                 auto t1 = std::chrono::high_resolution_clock::now();
+                 
+                 // Update simulation (timed)
+                 auto s0 = std::chrono::high_resolution_clock::now();
+                 solver.simulate(dt, init_params.simulation_steps_per_frame);
+                 auto s1 = std::chrono::high_resolution_clock::now();
+                 
+                 if (init_params.print_timing) {
+                     double update_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                     double simulate_ms = std::chrono::duration<double, std::milli>(s1 - s0).count();
+                     std::cout << "\nvisualizer.update: " << update_ms << " ms, simulate: " << simulate_ms << " ms" << std::flush;
+                 }
+                 
+                 // Output to OpenVDB file
+                 if (saveSimulation && step % 1 == 0) {
+                     std::string frameFilename = outputDir + "/frame_" + std::string(4 - std::to_string(step).length(), '0') + std::to_string(step) + ".vdb";
+                     exporter.exportToVDB(frameFilename.c_str(), solver.getDensityData(), solver.getVelocityData());
+                 }
+                 
+                 // Wait to maintain 60FPS
+                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
+             }
+         } else {
+             for (int step = 0; step < maxSteps; ++step) {
+                 // Update simulation only (timed)
+                 auto s0 = std::chrono::high_resolution_clock::now();
+                 solver.simulate(dt, init_params.simulation_steps_per_frame);
+                 auto s1 = std::chrono::high_resolution_clock::now();
+                 
+                 if (init_params.print_timing) {
+                     double simulate_ms = std::chrono::duration<double, std::milli>(s1 - s0).count();
+                     std::cout << "\rsimulate: " << simulate_ms << " ms" << std::flush;
+                 }
+                 
+                 // Output to OpenVDB file
+                 if (saveSimulation && step % 1 == 0) {
+                     std::string frameFilename = outputDir + "/frame_" + std::string(4 - std::to_string(step).length(), '0') + std::to_string(step) + ".vdb";
+                     exporter.exportToVDB(frameFilename.c_str(), solver.getDensityData(), solver.getVelocityData());
+                 }
+             }
+         }
         
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

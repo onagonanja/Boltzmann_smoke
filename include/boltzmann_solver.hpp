@@ -29,14 +29,14 @@ public:
         int source_injection_interval = 10;  // Interval between smoke injections
         int simulation_steps_per_frame = 30;  // Number of simulation steps per frame
         bool show_temperature_field = true;  // Show temperature field in visualizer
+        bool use_visualizer = true;  // Enable/disable on-screen visualization
+        bool print_stats = true;  // Enable/disable console statistics output
+        bool print_timing = false;  // Enable/disable timing output for update/simulate
         float force_term_coefficient = 0.01f;  // Coefficient for external force term in collision
-        // --- 追加: 温度場の境界条件 ---
         enum class TemperatureBCType { Adiabatic, Dirichlet, Periodic };
         TemperatureBCType temperature_bc_type = TemperatureBCType::Adiabatic;
         float dirichlet_temperature = 300.0f;
-        // --- 追加: カメラ位置 ---
         float camera_pos[3] = {0.0f, 0.0f, 20.0f};
-        // --- 追加: グリッドスケール ---
         int n_scale = 1;  // Grid scale factor
         // Add more parameters as needed
     };
