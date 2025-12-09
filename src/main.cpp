@@ -103,7 +103,7 @@ int main()
         }
         
         if (init_params.use_visualizer) {
-            Visualizer visualizer(800, 600, init_params.camera_pos, init_params.show_temperature_field);
+            Visualizer visualizer(1200, 800, init_params.camera_pos, init_params.show_temperature_field);
             
             bool simulation_running = false;
             bool restart_requested = false;
@@ -144,7 +144,7 @@ int main()
                     simulation_running = false;
                 }
                 
-                if (simulation_running && solver && current_step < maxSteps) {
+                if (simulation_running && solver) {
                     auto s0 = std::chrono::high_resolution_clock::now();
                     solver->simulate(dt, init_params.simulation_steps_per_frame);
                     auto s1 = std::chrono::high_resolution_clock::now();

@@ -375,7 +375,7 @@ bool Visualizer::renderUI(BoltzmannSolver::InitParams& params, bool& simulation_
         simulation_running = false;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Restart")) {
+    if (ImGui::Button("Reset")) {
         restart_requested = true;
         simulation_running = false;
     }
@@ -386,12 +386,12 @@ bool Visualizer::renderUI(BoltzmannSolver::InitParams& params, bool& simulation_
     ImGui::InputFloat("tau_f", &params.tau_f, 0.01f, 0.1f);
     ImGui::InputFloat("tau_t", &params.tau_t, 0.01f, 0.1f);
     ImGui::InputFloat("temperature", &params.temperature, 1.0f, 10.0f);
-    ImGui::InputFloat("beta", &params.beta, 0.0001f, 0.001f);
+    ImGui::InputFloat("beta", &params.beta, 0.001f, 0.01f);
     ImGui::InputFloat("buoyancy_rand_ratio", &params.buoyancy_rand_ratio, 0.01f, 0.1f);
     ImGui::InputFloat("tau_rand_factor", &params.tau_rand_factor, 0.01f, 0.1f);
     ImGui::InputFloat("source_injection_rate", &params.source_injection_rate, 0.01f, 0.1f);
     ImGui::InputFloat("source_temperature", &params.source_temperature, 1.0f, 10.0f);
-    ImGui::Checkbox("continuous_source", &params.continuous_source);
+    // ImGui::Checkbox("continuous_source", &params.continuous_source);
     ImGui::InputInt("source_injection_interval", &params.source_injection_interval);
     ImGui::InputInt("simulation_steps_per_frame", &params.simulation_steps_per_frame);
     ImGui::Checkbox("show_temperature_field", &params.show_temperature_field);
