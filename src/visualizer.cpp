@@ -362,7 +362,7 @@ void Visualizer::close() {
     }
 }
 
-bool Visualizer::renderUI(BoltzmannSolver::InitParams& params, bool& simulation_running, bool& restart_requested) {
+bool Visualizer::renderUI(BoltzmannSolver::InitParams& params, bool& simulation_running, bool& restart_requested, int& maxSteps, bool& saveSimulation, bool& infinite_simulation) {
     if (!imgui_initialized) return false;
     
     ImGui::Begin("Simulation Control");
@@ -379,6 +379,16 @@ bool Visualizer::renderUI(BoltzmannSolver::InitParams& params, bool& simulation_
         restart_requested = true;
         simulation_running = false;
     }
+    
+    ImGui::Separator();
+    ImGui::Text("Simulation Settings");
+    ImGui::Checkbox("Infinite Simulation", &infinite_simulation);
+    if (!infinite_simulation) {
+        ImGui::InputInt("Max Steps", &maxSteps);
+    } else {
+        ImGui::Text("Max Steps: Unlimited");
+    }
+    ImGui::Checkbox("Save Simulation", &saveSimulation);
     
     ImGui::Separator();
     ImGui::Text("Simulation Parameters");

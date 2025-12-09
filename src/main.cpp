@@ -16,7 +16,6 @@
 int main()
 {
     try {
-        // Load initialization parameters from JSON
         BoltzmannSolver::InitParams init_params;
         std::ifstream ifs("../init_params.json");
         if (ifs) {
@@ -75,14 +74,12 @@ int main()
             }
             init_params.dirichlet_temperature = j.value("dirichlet_temperature", 300.0f);
 
-            // カメラ位置の読み込み
             if (j.contains("camera_pos") && j["camera_pos"].is_array() && j["camera_pos"].size() == 3) {
                 for (int i = 0; i < 3; ++i) {
                     init_params.camera_pos[i] = j["camera_pos"][i];
                 }
             }
 
-            // グリッドスケールの読み込み
             init_params.n_scale = j.value("n_scale", 1);
         }
 
@@ -90,12 +87,7 @@ int main()
         const int nx = 32 * init_params.n_scale * 1;
         const int ny = 32 * init_params.n_scale * 2;
         const int nz = 32 * init_params.n_scale * 1;
-        const int maxSteps = 300;
         const float dt = 0.1f;
-        
-        // Whether to save simulation results
-        bool saveSimulation = true;
-        std::string saveFilename = "simulation_data.vdb";
 
         std::string outputDir = "vdb_output";
         if (!std::filesystem::exists(outputDir)) {
@@ -108,6 +100,9 @@ int main()
             bool simulation_running = false;
             bool restart_requested = false;
             int current_step = 0;
+            int maxSteps = 300;
+            bool saveSimulation = false;
+            bool infinite_simulation = false;
             
             int current_nx = 32 * init_params.n_scale * 1;
             int current_ny = 32 * init_params.n_scale * 2;
@@ -126,7 +121,7 @@ int main()
                 );
                 
                 bool restart = false;
-                visualizer.renderUI(init_params, simulation_running, restart);
+                visualizer.renderUI(init_params, simulation_running, restart, maxSteps, saveSimulation, infinite_simulation);
                 
                 if (restart_requested) {
                     restart_requested = false;
@@ -144,7 +139,8 @@ int main()
                     simulation_running = false;
                 }
                 
-                if (simulation_running && solver) {
+                bool should_continue = infinite_simulation || current_step < maxSteps;
+                if (simulation_running && solver && should_continue) {
                     auto s0 = std::chrono::high_resolution_clock::now();
                     solver->simulate(dt, init_params.simulation_steps_per_frame);
                     auto s1 = std::chrono::high_resolution_clock::now();
@@ -167,6 +163,9 @@ int main()
                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
             }
         } else {
+            int maxSteps = 300;
+            bool saveSimulation = false;
+            
             BoltzmannSolver solver(nx, ny, nz, init_params);
             VDBExporter exporter(nx, ny, nz);
             solver.initialize();

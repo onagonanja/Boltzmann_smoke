@@ -18,7 +18,7 @@ public:
     bool shouldClose() const { return glfwWindowShouldClose(window); }
     void close();
     
-    bool renderUI(BoltzmannSolver::InitParams& params, bool& simulation_running, bool& restart_requested);
+    bool renderUI(BoltzmannSolver::InitParams& params, bool& simulation_running, bool& restart_requested, int& maxSteps, bool& saveSimulation, bool& infinite_simulation);
     bool isUIFocused() const;
 
 private:
