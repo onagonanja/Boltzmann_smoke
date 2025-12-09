@@ -30,6 +30,36 @@ find_package(OpenGL REQUIRED)
 find_package(GLEW CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 
+# ImGui
+include(FetchContent)
+FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG docking
+)
+FetchContent_MakeAvailable(imgui)
+
+set(IMGUI_DIR ${imgui_SOURCE_DIR})
+set(IMGUI_SOURCES
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_demo.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+)
+
+add_library(imgui STATIC ${IMGUI_SOURCES})
+target_include_directories(imgui PUBLIC
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+)
+target_link_libraries(imgui PUBLIC
+    OpenGL::GL
+    glfw
+)
+
 # Include directories (OpenVDB etc. are often automatically added during linking, so can be omitted)
 target_include_directories(boltzmann_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -43,4 +73,5 @@ target_link_libraries(boltzmann_smoke
     OpenGL::GL
     GLEW::GLEW
     glfw
+    imgui
 )

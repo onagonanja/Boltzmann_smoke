@@ -5,12 +5,16 @@
 #include <vector>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include "imgui.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_opengl3.h"
 
 Visualizer::Visualizer(int width, int height, const float* cam_pos)
     : window_width(width * 2), window_height(height), window(nullptr), 
       densityShaderProgram(0), temperatureShaderProgram(0),
       camera_pos(cam_pos[0], cam_pos[1], cam_pos[2]), camera_front(0.0f, 0.0f, -1.0f), camera_up(0.0f, 1.0f, 0.0f),
-      yaw(-90.0f), pitch(0.0f), last_x(width / 2.0f), last_y(height / 2.0f), first_mouse(true)
+      yaw(-90.0f), pitch(0.0f), last_x(width / 2.0f), last_y(height / 2.0f), first_mouse(true),
+      imgui_initialized(false)
 {
     if (!glfwInit()) {
         throw std::runtime_error("Failed to initialize GLFW");
@@ -31,16 +35,23 @@ Visualizer::Visualizer(int width, int height, const float* cam_pos)
     }
     initShaders();
     initBuffers();
-    // glfwSetCursorPosCallback(window, mouseCallback);
-    // glfwSetScrollCallback(window, scrollCallback);
-    // glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    ImGui::StyleColorsDark();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+    imgui_initialized = true;
 }
 
 Visualizer::Visualizer(int width, int height, const float* cam_pos, bool show_temperature)
     : window_width(show_temperature ? width * 2 : width), window_height(height), window(nullptr),
       densityShaderProgram(0), temperatureShaderProgram(0),
       camera_pos(cam_pos[0], cam_pos[1], cam_pos[2]), camera_front(0.0f, 0.0f, -1.0f), camera_up(0.0f, 1.0f, 0.0f),
-      yaw(-90.0f), pitch(0.0f), last_x(width / 2.0f), last_y(height / 2.0f), first_mouse(true)
+      yaw(-90.0f), pitch(0.0f), last_x(width / 2.0f), last_y(height / 2.0f), first_mouse(true),
+      imgui_initialized(false)
 {
     if (!glfwInit()) {
         throw std::runtime_error("Failed to initialize GLFW");
@@ -62,9 +73,23 @@ Visualizer::Visualizer(int width, int height, const float* cam_pos, bool show_te
     }
     initShaders();
     initBuffers();
+    
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    ImGui::StyleColorsDark();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+    imgui_initialized = true;
 }
 
 Visualizer::~Visualizer() {
+    if (imgui_initialized) {
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplGlfw_Shutdown();
+        ImGui::DestroyContext();
+    }
     if (window) {
         glfwDestroyWindow(window);
     }
@@ -204,6 +229,10 @@ void Visualizer::initBuffers() {
 }
 
 void Visualizer::renderField(const float* data, int nx, int ny, int nz, bool isTemperature, int viewport_x, int viewport_y, int viewport_width, int viewport_height) {
+    if (!data || nx <= 0 || ny <= 0 || nz <= 0) {
+        return;
+    }
+    
     glViewport(viewport_x, viewport_y, viewport_width, viewport_height);
     
     unsigned int shaderProgram = isTemperature ? temperatureShaderProgram : densityShaderProgram;
@@ -216,7 +245,7 @@ void Visualizer::renderField(const float* data, int nx, int ny, int nz, bool isT
     
     float threshold = isTemperature ? 280.0f : 0.00197f;
 
-    std::vector<float> instances; // packed as x,y,z,value
+    std::vector<float> instances;
     instances.reserve(nx * ny * nz / 4);
     for (int z = 0; z < nz; ++z) {
         for (int y = 0; y < ny; ++y) {
@@ -249,7 +278,10 @@ void Visualizer::renderField(const float* data, int nx, int ny, int nz, bool isT
 void Visualizer::update(const float* density_data, const float* temperature_data, int nx, int ny, int nz, bool show_temperature) {
     if (!window) return;
 
-    // Clear the entire window
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
@@ -257,19 +289,20 @@ void Visualizer::update(const float* density_data, const float* temperature_data
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     if (show_temperature) {
-        // Calculate viewport dimensions for split view
         int half_width = window_width / 2;
-        
-        // Render density field on the left half
         renderField(density_data, nx, ny, nz, false, 0, 0, half_width, window_height);
-        
-        // Render temperature field on the right half
         renderField(temperature_data, nx, ny, nz, true, half_width, 0, half_width, window_height);
     } else {
-        // Render only density field in full window
         renderField(density_data, nx, ny, nz, false, 0, 0, window_width, window_height);
     }
+}
 
+void Visualizer::endFrame() {
+    if (!window) return;
+    
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    
     glfwSwapBuffers(window);
     glfwPollEvents();
 }
@@ -327,4 +360,65 @@ void Visualizer::close() {
     if (window) {
         glfwSetWindowShouldClose(window, GLFW_TRUE);
     }
+}
+
+bool Visualizer::renderUI(BoltzmannSolver::InitParams& params, bool& simulation_running, bool& restart_requested) {
+    if (!imgui_initialized) return false;
+    
+    ImGui::Begin("Simulation Control");
+    
+    if (ImGui::Button("Start")) {
+        simulation_running = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Stop")) {
+        simulation_running = false;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Restart")) {
+        restart_requested = true;
+        simulation_running = false;
+    }
+    
+    ImGui::Separator();
+    ImGui::Text("Simulation Parameters");
+    
+    ImGui::InputFloat("tau_f", &params.tau_f, 0.01f, 0.1f);
+    ImGui::InputFloat("tau_t", &params.tau_t, 0.01f, 0.1f);
+    ImGui::InputFloat("temperature", &params.temperature, 1.0f, 10.0f);
+    ImGui::InputFloat("beta", &params.beta, 0.0001f, 0.001f);
+    ImGui::InputFloat("buoyancy_rand_ratio", &params.buoyancy_rand_ratio, 0.01f, 0.1f);
+    ImGui::InputFloat("tau_rand_factor", &params.tau_rand_factor, 0.01f, 0.1f);
+    ImGui::InputFloat("source_injection_rate", &params.source_injection_rate, 0.01f, 0.1f);
+    ImGui::InputFloat("source_temperature", &params.source_temperature, 1.0f, 10.0f);
+    ImGui::Checkbox("continuous_source", &params.continuous_source);
+    ImGui::InputInt("source_injection_interval", &params.source_injection_interval);
+    ImGui::InputInt("simulation_steps_per_frame", &params.simulation_steps_per_frame);
+    ImGui::Checkbox("show_temperature_field", &params.show_temperature_field);
+    ImGui::InputFloat("wind_base", &params.wind_base, 0.01f, 0.1f);
+    ImGui::InputFloat("wind_factor", &params.wind_factor, 0.01f, 0.1f);
+    ImGui::InputFloat("source_radius", &params.source_radius, 0.1f, 1.0f);
+    ImGui::InputFloat("source_density", &params.source_density, 0.01f, 0.1f);
+    ImGui::InputFloat("velocity_limit", &params.velocity_limit, 0.01f, 0.1f);
+    ImGui::InputFloat("force_term_coefficient", &params.force_term_coefficient, 0.0001f, 0.001f);
+    
+    const char* bc_types[] = { "Adiabatic", "Dirichlet", "Periodic" };
+    int current_bc = static_cast<int>(params.temperature_bc_type);
+    if (ImGui::Combo("temperature_bc_type", &current_bc, bc_types, 3)) {
+        params.temperature_bc_type = static_cast<BoltzmannSolver::InitParams::TemperatureBCType>(current_bc);
+    }
+    ImGui::InputFloat("dirichlet_temperature", &params.dirichlet_temperature, 1.0f, 10.0f);
+    
+    ImGui::InputFloat3("camera_pos", params.camera_pos);
+    ImGui::InputInt("n_scale", &params.n_scale);
+    
+    ImGui::End();
+    
+    return true;
+}
+
+bool Visualizer::isUIFocused() const {
+    if (!imgui_initialized) return false;
+    ImGuiIO& io = ImGui::GetIO();
+    return io.WantCaptureMouse || io.WantCaptureKeyboard;
 } 

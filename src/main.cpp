@@ -11,6 +11,7 @@
 #include <iomanip> 
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <memory>
 
 int main()
 {
@@ -96,66 +97,96 @@ int main()
         bool saveSimulation = true;
         std::string saveFilename = "simulation_data.vdb";
 
-        // Normal simulation execution
-        BoltzmannSolver solver(nx, ny, nz, init_params);
-        VDBExporter exporter(nx, ny, nz);
-        
-        // Initial state setup
-        solver.initialize();
-        
-        // Create folder for VDB file storage
         std::string outputDir = "vdb_output";
         if (!std::filesystem::exists(outputDir)) {
             std::filesystem::create_directory(outputDir);
         }
         
-         if (init_params.use_visualizer) {
-             Visualizer visualizer(800, 600, init_params.camera_pos, init_params.show_temperature_field);
-             for (int step = 0; step < maxSteps && !visualizer.shouldClose(); ++step) {
-                 // Update visualizer (timed)
-                 auto t0 = std::chrono::high_resolution_clock::now();
-                 visualizer.update(solver.getDensityData(), solver.getTemperatureData(), nx, ny, nz, init_params.show_temperature_field);
-                 auto t1 = std::chrono::high_resolution_clock::now();
-                 
-                 // Update simulation (timed)
-                 auto s0 = std::chrono::high_resolution_clock::now();
-                 solver.simulate(dt, init_params.simulation_steps_per_frame);
-                 auto s1 = std::chrono::high_resolution_clock::now();
-                 
-                 if (init_params.print_timing) {
-                     double update_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-                     double simulate_ms = std::chrono::duration<double, std::milli>(s1 - s0).count();
-                     std::cout << "\nvisualizer.update: " << update_ms << " ms, simulate: " << simulate_ms << " ms" << std::flush;
-                 }
-                 
-                 // Output to OpenVDB file
-                 if (saveSimulation && step % 1 == 0) {
-                     std::string frameFilename = outputDir + "/frame_" + std::string(4 - std::to_string(step).length(), '0') + std::to_string(step) + ".vdb";
-                     exporter.exportToVDB(frameFilename.c_str(), solver.getDensityData(), solver.getVelocityData());
-                 }
-                 
-                 // Wait to maintain 60FPS
-                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
-             }
-         } else {
-             for (int step = 0; step < maxSteps; ++step) {
-                 // Update simulation only (timed)
-                 auto s0 = std::chrono::high_resolution_clock::now();
-                 solver.simulate(dt, init_params.simulation_steps_per_frame);
-                 auto s1 = std::chrono::high_resolution_clock::now();
-                 
-                 if (init_params.print_timing) {
-                     double simulate_ms = std::chrono::duration<double, std::milli>(s1 - s0).count();
-                     std::cout << "\rsimulate: " << simulate_ms << " ms" << std::flush;
-                 }
-                 
-                 // Output to OpenVDB file
-                 if (saveSimulation && step % 1 == 0) {
-                     std::string frameFilename = outputDir + "/frame_" + std::string(4 - std::to_string(step).length(), '0') + std::to_string(step) + ".vdb";
-                     exporter.exportToVDB(frameFilename.c_str(), solver.getDensityData(), solver.getVelocityData());
-                 }
-             }
-         }
+        if (init_params.use_visualizer) {
+            Visualizer visualizer(800, 600, init_params.camera_pos, init_params.show_temperature_field);
+            
+            bool simulation_running = false;
+            bool restart_requested = false;
+            int current_step = 0;
+            
+            int current_nx = 32 * init_params.n_scale * 1;
+            int current_ny = 32 * init_params.n_scale * 2;
+            int current_nz = 32 * init_params.n_scale * 1;
+            
+            std::unique_ptr<BoltzmannSolver> solver = std::make_unique<BoltzmannSolver>(current_nx, current_ny, current_nz, init_params);
+            std::unique_ptr<VDBExporter> exporter = std::make_unique<VDBExporter>(current_nx, current_ny, current_nz);
+            solver->initialize();
+            
+            while (!visualizer.shouldClose()) {
+                visualizer.update(
+                    solver->getDensityData(),
+                    solver->getTemperatureData(),
+                    current_nx, current_ny, current_nz,
+                    init_params.show_temperature_field
+                );
+                
+                bool restart = false;
+                visualizer.renderUI(init_params, simulation_running, restart);
+                
+                if (restart_requested) {
+                    restart_requested = false;
+                    restart = true;
+                }
+                
+                if (restart) {
+                    current_nx = 32 * init_params.n_scale * 1;
+                    current_ny = 32 * init_params.n_scale * 2;
+                    current_nz = 32 * init_params.n_scale * 1;
+                    solver = std::make_unique<BoltzmannSolver>(current_nx, current_ny, current_nz, init_params);
+                    exporter = std::make_unique<VDBExporter>(current_nx, current_ny, current_nz);
+                    solver->initialize();
+                    current_step = 0;
+                    simulation_running = false;
+                }
+                
+                if (simulation_running && solver && current_step < maxSteps) {
+                    auto s0 = std::chrono::high_resolution_clock::now();
+                    solver->simulate(dt, init_params.simulation_steps_per_frame);
+                    auto s1 = std::chrono::high_resolution_clock::now();
+                    
+                    if (init_params.print_timing) {
+                        double simulate_ms = std::chrono::duration<double, std::milli>(s1 - s0).count();
+                        std::cout << "\rsimulate: " << simulate_ms << " ms" << std::flush;
+                    }
+                    
+                    if (saveSimulation && current_step % 1 == 0) {
+                        std::string frameFilename = outputDir + "/frame_" + std::string(4 - std::to_string(current_step).length(), '0') + std::to_string(current_step) + ".vdb";
+                        exporter->exportToVDB(frameFilename.c_str(), solver->getDensityData(), solver->getVelocityData());
+                    }
+                    
+                    current_step++;
+                }
+                
+                visualizer.endFrame();
+                
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            }
+        } else {
+            BoltzmannSolver solver(nx, ny, nz, init_params);
+            VDBExporter exporter(nx, ny, nz);
+            solver.initialize();
+            
+            for (int step = 0; step < maxSteps; ++step) {
+                auto s0 = std::chrono::high_resolution_clock::now();
+                solver.simulate(dt, init_params.simulation_steps_per_frame);
+                auto s1 = std::chrono::high_resolution_clock::now();
+                
+                if (init_params.print_timing) {
+                    double simulate_ms = std::chrono::duration<double, std::milli>(s1 - s0).count();
+                    std::cout << "\rsimulate: " << simulate_ms << " ms" << std::flush;
+                }
+                
+                if (saveSimulation && step % 1 == 0) {
+                    std::string frameFilename = outputDir + "/frame_" + std::string(4 - std::to_string(step).length(), '0') + std::to_string(step) + ".vdb";
+                    exporter.exportToVDB(frameFilename.c_str(), solver.getDensityData(), solver.getVelocityData());
+                }
+            }
+        }
         
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
