@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <memory>
+#include "boltzmann_solver.hpp"
 
 class Visualizer {
 public:
@@ -13,8 +14,12 @@ public:
     ~Visualizer();
 
     void update(const float* density_data, const float* temperature_data, int nx, int ny, int nz, bool show_temperature = true);
+    void endFrame();
     bool shouldClose() const { return glfwWindowShouldClose(window); }
     void close();
+    
+    bool renderUI(BoltzmannSolver::InitParams& params, bool& simulation_running, bool& restart_requested, int& maxSteps, bool& saveSimulation, bool& infinite_simulation);
+    bool isUIFocused() const;
 
 private:
     void initShaders();
@@ -42,4 +47,5 @@ private:
     float last_x;
     float last_y;
     bool first_mouse;
+    bool imgui_initialized;
 }; 

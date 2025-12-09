@@ -4,7 +4,9 @@
 
 A GPU-accelerated smoke simulation using the Lattice Boltzmann Method (LBM) to generate realistic smoke behavior. The simulation produces smoke particles based on fluid dynamics principles and exports the results in OpenVDB format for external rendering and post-processing.
 
-![Image](https://github.com/user-attachments/assets/cc497b5b-8d64-4363-a36e-6920dabdb381)
+![Image](https://github.com/user-attachments/assets/04c8560d-7b10-411f-a813-2349e962a7ab)
+
+<!-- ![Image](https://github.com/user-attachments/assets/cc497b5b-8d64-4363-a36e-6920dabdb381) -->
 
 ## Quick Build Guide
 
@@ -50,7 +52,3 @@ make
 ```bash
 ./boltzmann_smoke
 ```
-
-## Configuration
-
-Edit `init_params.json` to adjust simulation parameters including camera position, temperature settings, and smoke source properties.
